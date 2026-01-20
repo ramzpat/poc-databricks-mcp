@@ -1,0 +1,26 @@
+# Example MCP server configuration for Databricks (OAuth-only shared service principal)
+warehouse:
+  host: https://<workspace-hostname>
+  http_path: /sql/1.0/warehouses/<warehouse-http-path>
+  warehouse_id: <warehouse-id>
+auth:
+  oauth:
+    client_id: ${DATABRICKS_CLIENT_ID}
+    client_secret: ${DATABRICKS_CLIENT_SECRET}
+    token_url: https://<workspace-hostname>/oidc/v1/token
+scopes:
+  catalogs:
+    - main
+  schemas:
+    - default
+limits:
+  # Use -1 to represent no limit; otherwise set explicit caps.
+  max_rows: 10000
+  sample_max_rows: 1000
+  query_timeout_seconds: 60
+  max_concurrent_queries: 5
+  allow_statement_types:
+    - SELECT
+observability:
+  log_level: info
+  propagate_request_ids: true
