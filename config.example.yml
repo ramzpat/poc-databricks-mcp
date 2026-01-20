@@ -1,13 +1,13 @@
 # Example MCP server configuration for Databricks (OAuth-only shared service principal)
 warehouse:
-  host: https://<workspace-hostname>
-  http_path: /sql/1.0/warehouses/<warehouse-http-path>
-  warehouse_id: <warehouse-id>
+  host: ${DATABRICKS_HOST}
+  http_path: ${DATABRICKS_HTTP_PATH}
+  warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
 auth:
   oauth:
     client_id: ${DATABRICKS_CLIENT_ID}
     client_secret: ${DATABRICKS_CLIENT_SECRET}
-    token_url: https://<workspace-hostname>/oidc/v1/token
+    token_url: ${DATABRICKS_TOKEN_URL}
 scopes:
   catalogs:
     - main
