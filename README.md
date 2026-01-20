@@ -19,6 +19,19 @@
 - Run server: `DATABRICKS_MCP_CONFIG=config.yml python -m databricks_mcp.server`
 - Run tests: `pytest`
 
+## Get an OAuth token (service principal)
+- Prereq: service principal with `client_id` / `client_secret`, and token endpoint (workspace OIDC). Scope is usually not required; if your IdP enforces it, pass `scope`.
+- Example request:
+	```bash
+	curl -X POST "$DATABRICKS_TOKEN_URL" \
+		-H 'Content-Type: application/x-www-form-urlencoded' \
+		-d "grant_type=client_credentials" \
+		-d "client_id=$DATABRICKS_CLIENT_ID" \
+		-d "client_secret=$DATABRICKS_CLIENT_SECRET"
+	```
+- Expected JSON: `{ "access_token": "...", "token_type": "Bearer", "expires_in": 3600 }`
+- The server fetches and refreshes tokens automatically via `DATABRICKS_CLIENT_ID/SECRET` and `DATABRICKS_TOKEN_URL`; the curl is only for validation/debug.
+
 ## Configuration
 - Required fields (YAML): warehouse host, `http_path`, `warehouse_id`, allowlisted `scopes.catalogs` and `scopes.schemas`, limits (rows/time/concurrency), and optional observability settings.
 - Required env vars: OAuth client secret (`${DATABRICKS_CLIENT_SECRET}` in YAML) plus any host/token settings referenced with `${...}` (e.g., `DATABRICKS_HOST`, `DATABRICKS_HTTP_PATH`, `DATABRICKS_WAREHOUSE_ID`, `DATABRICKS_TOKEN_URL`).
