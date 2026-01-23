@@ -1,0 +1,7 @@
+config.yml
+.env
+**/.vscode/mcp.json
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
