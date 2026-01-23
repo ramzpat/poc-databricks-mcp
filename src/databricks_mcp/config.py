@@ -63,6 +63,7 @@ _ALLOWED_STATEMENTS = {
     "CREATE",
     "ALTER",
     "DROP",
+    "DESCRIBE",
 }
 
 

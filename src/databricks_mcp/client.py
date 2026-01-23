@@ -148,6 +148,25 @@ class DatabricksSQLClient:
         predicate: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """
+        Retrieve sample data from a table with optional filtering.
+
+        Applies LIMIT at the SQL level for efficient handling of large datasets.
+
+        Parameters:
+        catalog (str): The catalog name
+        schema (str): The schema name
+        table (str): The table name
+        limit (int | None): Maximum number of rows to return
+        predicate (str | None): Optional WHERE clause predicate
+        request_id (str | None): Request tracking ID
+
+        Returns:
+        dict[str, Any]: Contains rows, truncated flag, and limit_applied
+
+        Raises:
+        GuardrailError: If effective_limit is 0 or less
+        """
         ensure_catalog_allowed(catalog, self._config.scopes)
         ensure_schema_allowed(catalog, schema, self._config.scopes)
         safe_table = sanitize_identifier(table, "table")
@@ -157,7 +176,7 @@ class DatabricksSQLClient:
             raise GuardrailError("Sample limit must be > 0")
 
         predicate_clause = f" WHERE {predicate}" if predicate else ""
-        sql = f"SELECT * FROM `{catalog}`.`{schema}`.`{safe_table}`{predicate_clause}"
+        sql = f"SELECT * FROM `{catalog}`.`{schema}`.`{safe_table}`{predicate_clause} LIMIT {effective_limit}"
         timeout_value = effective_timeout(None, self._config.limits)
         rows, truncated = self._execute(
             sql,
@@ -239,18 +258,32 @@ class DatabricksSQLClient:
         timeout: int | None = None,
         request_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
+        """
+        Execute SQL query and return results as list of dictionaries.
+
+        Assumes LIMIT is already applied in the SQL query for large datasets.
+
+        Parameters:
+        sql (str): SQL query to execute
+        params (Iterable[Any] | None): Query parameters for parameterized queries
+        limit (int | None): Expected row limit (for logging and validation)
+        timeout (int | None): Query timeout in seconds
+        request_id (str | None): Request tracking ID
+
+        Returns:
+        tuple[list[dict[str, Any]], bool]: Rows as dictionaries and truncated flag
+
+        Raises:
+        QueryError: If query execution fails
+        """
         statement_type = detect_statement_type(sql)
         ensure_statement_allowed(
             statement_type, self._config.limits.allow_statement_types
         )
 
         access_token = self._token_provider.get_token()
-        truncated = False
-        fetch_size = None
-        if limit and limit > 0:
-            fetch_size = limit + 1
-
         query_id = str(uuid.uuid4())
+
         with self._semaphore:
             try:
                 with databricks.sql.connect(
@@ -266,11 +299,7 @@ class DatabricksSQLClient:
                             if "timeout" not in str(exc):
                                 raise
                             cursor.execute(sql, params)
-                        rows_raw = (
-                            cursor.fetchmany(fetch_size)
-                            if fetch_size
-                            else cursor.fetchall()
-                        )
+                        rows_raw = cursor.fetchall()
                         description = cursor.description or []
             except DatabricksError as exc:
                 self._log.warning(
@@ -285,14 +314,9 @@ class DatabricksSQLClient:
                     "Query execution failed; see logs for details"
                 ) from exc
 
-        if fetch_size and len(rows_raw) > limit:
-            rows_raw = rows_raw[:limit]
-            truncated = True
-
         columns = [col[0] for col in description]
         rows = [dict(zip(columns, row)) for row in rows_raw]
-        if truncated and not rows:
-            truncated = False
+        truncated = False
 
         self._log.info(
             "Query executed",
