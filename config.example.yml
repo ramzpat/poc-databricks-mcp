@@ -10,9 +10,9 @@ auth:
     token_url: ${DATABRICKS_TOKEN_URL}
 scopes:
   catalogs:
-    - main
-  schemas:
-    - default
+    main:
+      schemas:
+        - default
 limits:
   # Use -1 to represent no limit; otherwise set explicit caps.
   max_rows: 10000

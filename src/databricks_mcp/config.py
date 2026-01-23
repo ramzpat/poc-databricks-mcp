@@ -27,8 +27,7 @@ class OAuthConfig:
 
 @dataclass
 class ScopeConfig:
-    catalogs: list[str]
-    schemas: list[str]
+    catalogs: dict[str, list[str]]
 
 
 @dataclass
@@ -127,29 +126,44 @@ def load_config(path: str | Path, env: Mapping[str, str] | None = None) -> AppCo
         scope=oauth_raw.get("scope"),
     )
 
-    catalogs = scopes_raw.get("catalogs", [])
-    schemas = scopes_raw.get("schemas", [])
-    if not catalogs:
+    catalogs_raw = scopes_raw.get("catalogs", {})
+    if not isinstance(catalogs_raw, dict) or not catalogs_raw:
         raise ConfigError("At least one catalog must be allowlisted")
-    if not schemas:
-        raise ConfigError("At least one schema must be allowlisted")
-    scopes = ScopeConfig(catalogs=catalogs, schemas=schemas)
+    catalogs: dict[str, list[str]] = {}
+    for catalog, catalog_config in catalogs_raw.items():
+        if not isinstance(catalog_config, dict):
+            raise ConfigError("Catalog scopes must be a mapping of catalog to schemas")
+        schemas = catalog_config.get("schemas", [])
+        if not schemas:
+            raise ConfigError(
+                f"At least one schema must be allowlisted for catalog {catalog}"
+            )
+        catalogs[str(catalog)] = list(schemas)
+    scopes = ScopeConfig(catalogs=catalogs)
 
     limits = LimitsConfig(
-        max_rows=_validate_positive_or_unlimited(limits_raw.get("max_rows", 10000), "max_rows"),
-        sample_max_rows=_validate_positive_or_unlimited(limits_raw.get("sample_max_rows", 1000), "sample_max_rows"),
+        max_rows=_validate_positive_or_unlimited(
+            limits_raw.get("max_rows", 10000), "max_rows"
+        ),
+        sample_max_rows=_validate_positive_or_unlimited(
+            limits_raw.get("sample_max_rows", 1000), "sample_max_rows"
+        ),
         query_timeout_seconds=_validate_positive_or_unlimited(
             limits_raw.get("query_timeout_seconds", 60), "query_timeout_seconds"
         ),
         max_concurrent_queries=_validate_positive_or_unlimited(
             limits_raw.get("max_concurrent_queries", 5), "max_concurrent_queries"
         ),
-        allow_statement_types=_normalize_statements(limits_raw.get("allow_statement_types")),
+        allow_statement_types=_normalize_statements(
+            limits_raw.get("allow_statement_types")
+        ),
     )
 
     observability = ObservabilityConfig(
         log_level=str(observability_raw.get("log_level", "info")),
-        propagate_request_ids=bool(observability_raw.get("propagate_request_ids", True)),
+        propagate_request_ids=bool(
+            observability_raw.get("propagate_request_ids", True)
+        ),
     )
 
     if not warehouse.host or not warehouse.http_path or not warehouse.warehouse_id:

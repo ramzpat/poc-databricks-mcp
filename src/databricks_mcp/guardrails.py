@@ -20,9 +20,10 @@ def ensure_catalog_allowed(catalog: str, scopes: ScopeConfig) -> None:
         raise ScopeError(f"Catalog {catalog} is not allowlisted")
 
 
-def ensure_schema_allowed(schema: str, scopes: ScopeConfig) -> None:
-    if schema not in scopes.schemas:
-        raise ScopeError(f"Schema {schema} is not allowlisted")
+def ensure_schema_allowed(catalog: str, schema: str, scopes: ScopeConfig) -> None:
+    allowed_schemas = scopes.catalogs.get(catalog, [])
+    if schema not in allowed_schemas:
+        raise ScopeError(f"Schema {schema} is not allowlisted for catalog {catalog}")
 
 
 def ensure_statement_allowed(statement_type: str, allowed: Iterable[str]) -> None:
@@ -48,7 +49,9 @@ def clamp_limit(requested: int | None, cap: int) -> int | None:
 
 def effective_timeout(requested: int | None, config: LimitsConfig) -> int | None:
     if requested is None:
-        return config.query_timeout_seconds if config.query_timeout_seconds != -1 else None
+        return (
+            config.query_timeout_seconds if config.query_timeout_seconds != -1 else None
+        )
     if config.query_timeout_seconds == -1:
         return requested
     return min(requested, config.query_timeout_seconds)

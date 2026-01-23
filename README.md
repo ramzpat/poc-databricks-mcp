@@ -1,4 +1,21 @@
-# POC - Databricks MCP
+---
+post_title: POC - Databricks MCP
+author1: GitHub Copilot
+post_slug: poc-databricks-mcp
+microsoft_alias: na
+featured_image: na
+categories:
+	- uncategorized
+tags:
+	- databricks
+	- mcp
+	- configuration
+ai_note: Generated with AI assistance
+summary: Overview and configuration guide for the Databricks MCP server.
+post_date: 2026-01-23
+---
+
+## POC - Databricks MCP
 
 ## Quick start
 - Install: `pip install -e .`
@@ -33,9 +50,16 @@
 - The server fetches and refreshes tokens automatically via `DATABRICKS_CLIENT_ID/SECRET` and `DATABRICKS_TOKEN_URL`; the curl is only for validation/debug.
 
 ## Configuration
-- Required fields (YAML): warehouse host, `http_path`, `warehouse_id`, allowlisted `scopes.catalogs` and `scopes.schemas`, limits (rows/time/concurrency), and optional observability settings.
-- Required env vars: OAuth client secret (`${DATABRICKS_CLIENT_SECRET}` in YAML) plus any host/token settings referenced with `${...}` (e.g., `DATABRICKS_HOST`, `DATABRICKS_HTTP_PATH`, `DATABRICKS_WAREHOUSE_ID`, `DATABRICKS_TOKEN_URL`).
-- Limits: `max_rows`, `sample_max_rows`, `query_timeout_seconds`, `max_concurrent_queries` (cannot be unlimited), `allow_statement_types` (default `SELECT`). `-1` means “no limit” for rows/time only.
+- Required fields (YAML): warehouse host, `http_path`, `warehouse_id`,
+	allowlisted `scopes.catalogs.<catalog>.schemas`, limits (rows/time/concurrency),
+	and optional observability settings.
+- Required env vars: OAuth client secret (`${DATABRICKS_CLIENT_SECRET}` in YAML)
+	plus any host/token settings referenced with `${...}` (e.g.,
+	`DATABRICKS_HOST`, `DATABRICKS_HTTP_PATH`, `DATABRICKS_WAREHOUSE_ID`,
+	`DATABRICKS_TOKEN_URL`).
+- Limits: `max_rows`, `sample_max_rows`, `query_timeout_seconds`,
+	`max_concurrent_queries` (cannot be unlimited), `allow_statement_types`
+	(default `SELECT`). `-1` means “no limit” for rows/time only.
 - Secrets: always use `${ENV_VAR}` references in YAML; never hard-code tokens.
 
 ## Tools

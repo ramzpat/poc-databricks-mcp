@@ -1,4 +1,21 @@
-# Requirements: Databricks MCP Server
+---
+post_title: Requirements - Databricks MCP Server
+author1: GitHub Copilot
+post_slug: requirements-databricks-mcp-server
+microsoft_alias: na
+featured_image: na
+categories:
+  - uncategorized
+tags:
+  - databricks
+  - mcp
+  - requirements
+ai_note: Generated with AI assistance
+summary: Requirements and constraints for the Databricks MCP server.
+post_date: 2026-01-23
+---
+
+## Requirements: Databricks MCP Server
 
 ## Goal and Scope
 - Expose Databricks data through an MCP server so external Agentic AIs can explore metadata, preview data, and run governed SQL queries.
@@ -37,9 +54,14 @@
   - Structured logs with request IDs, query IDs, Databricks statement IDs, and duration.
   - Basic metrics: request counts by tool, error counts, p95 latency, rows returned.
 - Configuration
-  - Required: DATABRICKS_HOST (workspace URL), DATABRICKS_HTTP_PATH (SQL Warehouse path), OAuth client credentials, DATABRICKS_WAREHOUSE_ID, ALLOWED_CATALOGS, ALLOWED_SCHEMAS.
-  - Optional: MAX_ROWS, SAMPLE_MAX_ROWS, QUERY_TIMEOUT_SECONDS, MAX_CONCURRENT_QUERIES, ALLOW_STATEMENT_TYPES (default ["SELECT"]). `-1` may be used to indicate no limit where explicitly allowed.
-  - Prefer YAML config file to define allowed catalogs/schemas and warehouse ID; env vars supply secrets.
+  - Required: DATABRICKS_HOST (workspace URL), DATABRICKS_HTTP_PATH (SQL Warehouse path),
+    OAuth client credentials, DATABRICKS_WAREHOUSE_ID, allowlisted catalogs with
+    per-catalog schemas defined in YAML config.
+  - Optional: MAX_ROWS, SAMPLE_MAX_ROWS, QUERY_TIMEOUT_SECONDS, MAX_CONCURRENT_QUERIES,
+    ALLOW_STATEMENT_TYPES (default ["SELECT"]). `-1` may be used to indicate no limit where
+    explicitly allowed.
+  - Prefer YAML config file to define allowed catalogs and per-catalog schemas; env vars
+    supply secrets.
   - Configuration validation on startup with clear failure messages.
 - Performance considerations
   - Favor Serverless SQL Warehouse; document recommended size and auto-stop policy.

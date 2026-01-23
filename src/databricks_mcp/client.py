@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import logging
 import uuid
 from threading import Semaphore
@@ -36,17 +35,21 @@ class DatabricksSQLClient:
 
     def list_schemas(self, catalog: str, request_id: str | None = None) -> list[str]:
         ensure_catalog_allowed(catalog, self._config.scopes)
-        return list(self._config.scopes.schemas)
+        return list(self._config.scopes.catalogs.get(catalog, []))
 
-    def list_tables(self, catalog: str, schema: str, request_id: str | None = None) -> dict[str, Any]:
+    def list_tables(
+        self, catalog: str, schema: str, request_id: str | None = None
+    ) -> dict[str, Any]:
         ensure_catalog_allowed(catalog, self._config.scopes)
-        ensure_schema_allowed(schema, self._config.scopes)
+        ensure_schema_allowed(catalog, schema, self._config.scopes)
         sql = (
             "SELECT table_catalog, table_schema, table_name, table_type "
             "FROM system.information_schema.tables "
             "WHERE table_catalog = ? AND table_schema = ?"
         )
-        rows, truncated = self._execute(sql, (catalog, schema), limit=None, request_id=request_id)
+        rows, truncated = self._execute(
+            sql, (catalog, schema), limit=None, request_id=request_id
+        )
         return {
             "tables": [
                 {
@@ -60,9 +63,11 @@ class DatabricksSQLClient:
             "truncated": truncated,
         }
 
-    def table_metadata(self, catalog: str, schema: str, table: str, request_id: str | None = None) -> dict[str, Any]:
+    def table_metadata(
+        self, catalog: str, schema: str, table: str, request_id: str | None = None
+    ) -> dict[str, Any]:
         ensure_catalog_allowed(catalog, self._config.scopes)
-        ensure_schema_allowed(schema, self._config.scopes)
+        ensure_schema_allowed(catalog, schema, self._config.scopes)
         safe_table = sanitize_identifier(table, "table")
         columns_sql = (
             "SELECT column_name, data_type, is_nullable, comment, ordinal_position "
@@ -81,9 +86,18 @@ class DatabricksSQLClient:
         )
         detail_sql = f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{safe_table}`"
 
-        columns, _ = self._execute(columns_sql, (catalog, schema, safe_table), limit=None, request_id=request_id)
-        primary_keys, _ = self._execute(pk_sql, (catalog, schema, safe_table), limit=None, request_id=request_id)
-        details, _ = self._execute(detail_sql, params=None, limit=None, request_id=request_id)
+        columns, _ = self._execute(
+            columns_sql,
+            (catalog, schema, safe_table),
+            limit=None,
+            request_id=request_id,
+        )
+        primary_keys, _ = self._execute(
+            pk_sql, (catalog, schema, safe_table), limit=None, request_id=request_id
+        )
+        details, _ = self._execute(
+            detail_sql, params=None, limit=None, request_id=request_id
+        )
         detail = details[0] if details else {}
 
         return {
@@ -105,9 +119,11 @@ class DatabricksSQLClient:
             "row_count": detail.get("numRows"),
         }
 
-    def partition_info(self, catalog: str, schema: str, table: str, request_id: str | None = None) -> dict[str, Any]:
+    def partition_info(
+        self, catalog: str, schema: str, table: str, request_id: str | None = None
+    ) -> dict[str, Any]:
         ensure_catalog_allowed(catalog, self._config.scopes)
-        ensure_schema_allowed(schema, self._config.scopes)
+        ensure_schema_allowed(catalog, schema, self._config.scopes)
         safe_table = sanitize_identifier(table, "table")
         sql = f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{safe_table}`"
         rows, _ = self._execute(sql, params=None, limit=None, request_id=request_id)
@@ -133,7 +149,7 @@ class DatabricksSQLClient:
         request_id: str | None = None,
     ) -> dict[str, Any]:
         ensure_catalog_allowed(catalog, self._config.scopes)
-        ensure_schema_allowed(schema, self._config.scopes)
+        ensure_schema_allowed(catalog, schema, self._config.scopes)
         safe_table = sanitize_identifier(table, "table")
         cap = self._config.limits.sample_max_rows
         effective_limit = clamp_limit(limit, cap)
@@ -166,9 +182,17 @@ class DatabricksSQLClient:
         timeout_seconds: int | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        ensure_statement_allowed(detect_statement_type(sql), self._config.limits.allow_statement_types)
-        cap = self._config.limits.sample_max_rows if self._config.limits.sample_max_rows != -1 else None
-        effective_limit = clamp_limit(limit, cap if cap is not None else self._config.limits.max_rows)
+        ensure_statement_allowed(
+            detect_statement_type(sql), self._config.limits.allow_statement_types
+        )
+        cap = (
+            self._config.limits.sample_max_rows
+            if self._config.limits.sample_max_rows != -1
+            else None
+        )
+        effective_limit = clamp_limit(
+            limit, cap if cap is not None else self._config.limits.max_rows
+        )
         timeout_value = effective_timeout(timeout_seconds, self._config.limits)
         wrapped_sql = self._wrap_with_limit(sql, effective_limit)
         rows, truncated = self._execute(
@@ -187,7 +211,9 @@ class DatabricksSQLClient:
         timeout_seconds: int | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        ensure_statement_allowed(detect_statement_type(sql), self._config.limits.allow_statement_types)
+        ensure_statement_allowed(
+            detect_statement_type(sql), self._config.limits.allow_statement_types
+        )
         effective_limit = clamp_limit(limit, self._config.limits.max_rows)
         timeout_value = effective_timeout(timeout_seconds, self._config.limits)
         wrapped_sql = self._wrap_with_limit(sql, effective_limit)
@@ -214,7 +240,9 @@ class DatabricksSQLClient:
         request_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         statement_type = detect_statement_type(sql)
-        ensure_statement_allowed(statement_type, self._config.limits.allow_statement_types)
+        ensure_statement_allowed(
+            statement_type, self._config.limits.allow_statement_types
+        )
 
         access_token = self._token_provider.get_token()
         truncated = False
@@ -233,14 +261,24 @@ class DatabricksSQLClient:
                 ) as connection:
                     with connection.cursor() as cursor:
                         cursor.execute(sql, params, timeout=timeout)
-                        rows_raw = cursor.fetchmany(fetch_size) if fetch_size else cursor.fetchall()
+                        rows_raw = (
+                            cursor.fetchmany(fetch_size)
+                            if fetch_size
+                            else cursor.fetchall()
+                        )
                         description = cursor.description or []
             except DatabricksError as exc:
                 self._log.warning(
                     "Databricks query failed",
-                    extra=log_extra(request_id=request_id, query_id=query_id, statement_type=statement_type),
+                    extra=log_extra(
+                        request_id=request_id,
+                        query_id=query_id,
+                        statement_type=statement_type,
+                    ),
                 )
-                raise QueryError("Query execution failed; see logs for details") from exc
+                raise QueryError(
+                    "Query execution failed; see logs for details"
+                ) from exc
 
         if fetch_size and len(rows_raw) > limit:
             rows_raw = rows_raw[:limit]
@@ -253,6 +291,11 @@ class DatabricksSQLClient:
 
         self._log.info(
             "Query executed",
-            extra=log_extra(request_id=request_id, query_id=query_id, statement_type=statement_type, truncated=truncated),
+            extra=log_extra(
+                request_id=request_id,
+                query_id=query_id,
+                statement_type=statement_type,
+                truncated=truncated,
+            ),
         )
         return rows, truncated

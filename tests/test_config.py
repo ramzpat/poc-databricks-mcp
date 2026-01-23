@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -28,8 +27,9 @@ auth:
     client_secret: ${DATABRICKS_CLIENT_SECRET}
     token_url: https://example.cloud.databricks.com/oidc/v1/token
 scopes:
-  catalogs: [main]
-  schemas: [default]
+  catalogs:
+    main:
+      schemas: [default]
 limits:
   max_rows: 100
   sample_max_rows: 10
@@ -53,8 +53,9 @@ warehouse:
   http_path: /sql/1.0/warehouses/abc
   warehouse_id: warehouse-123
 scopes:
-  catalogs: [main]
-  schemas: [default]
+  catalogs:
+    main:
+      schemas: [default]
 """,
     )
     with pytest.raises(ConfigError):
@@ -75,8 +76,9 @@ auth:
     client_secret: secret
     token_url: https://example.cloud.databricks.com/oidc/v1/token
 scopes:
-  catalogs: [main]
-  schemas: [default]
+  catalogs:
+    main:
+      schemas: [default]
 limits:
   max_rows: 0
   sample_max_rows: 0
