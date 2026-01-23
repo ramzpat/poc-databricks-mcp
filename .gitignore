@@ -5,3 +5,4 @@ config.yml
 **/*.pyc
 .venv/
 venv/
+**/*.egg-info
