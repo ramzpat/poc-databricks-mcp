@@ -88,10 +88,10 @@ Add this configuration to run from the Git repository:
     "databricks-mcp": {
       "command": "uvx",
       "args": [
-        "--from",
-        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
         "--python",
         "3.11",
+        "--from",
+        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
         "databricks-mcp"
       ],
       "env": {
@@ -127,9 +127,9 @@ If this package is published to PyPI, you can simplify the configuration:
     "databricks-mcp": {
       "command": "uvx",
       "args": [
-        "databricks-mcp",
         "--python",
-        "3.11"
+        "3.11",
+        "databricks-mcp"
       ],
       "env": {
         "DATABRICKS_MCP_CONFIG": "/absolute/path/to/your/config.yml",
@@ -155,10 +155,10 @@ If you prefer to place your `config.yml` in a specific directory, you can set th
     "databricks-mcp": {
       "command": "uvx",
       "args": [
-        "--from",
-        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
         "--python",
         "3.11",
+        "--from",
+        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
         "databricks-mcp"
       ],
       "env": {
@@ -175,7 +175,7 @@ If you prefer to place your `config.yml` in a specific directory, you can set th
 }
 ```
 
-**Note**: The server looks for `config.example.yml` by default if `DATABRICKS_MCP_CONFIG` is not set. Using an absolute path is recommended for clarity and reliability.
+**Note**: If `DATABRICKS_MCP_CONFIG` is not set, the server will look for `config.example.yml` in the current working directory by default. For production use, always specify an absolute path to your `config.yml` file for clarity and reliability.
 
 ### Environment Variables Reference
 
@@ -196,10 +196,10 @@ Example with minimal environment variables:
     "databricks-mcp": {
       "command": "uvx",
       "args": [
-        "--from",
-        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
         "--python",
         "3.11",
+        "--from",
+        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
         "databricks-mcp"
       ],
       "env": {
@@ -238,8 +238,8 @@ export DATABRICKS_CLIENT_ID="your-client-id"
 export DATABRICKS_CLIENT_SECRET="your-client-secret"
 export DATABRICKS_TOKEN_URL="https://your-workspace.cloud.databricks.com/oidc/v1/token"
 
-# Run with uvx from Git
-uvx --from git+https://github.com/ramzpat/poc-databricks-mcp.git databricks-mcp
+# Run with uvx from Git (if uv is installed)
+uvx --python 3.11 --from git+https://github.com/ramzpat/poc-databricks-mcp.git databricks-mcp
 
 # Or run directly with Python (if you cloned the repo)
 python -m databricks_mcp.server
