@@ -33,11 +33,13 @@ def build_app(
 
     @app.tool()
     async def list_catalogs(request_id: str | None = None) -> list[str]:
+        """List all available catalogs in the Databricks workspace."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(sql_client.list_catalogs, rid)
 
     @app.tool()
     async def list_schemas(catalog: str, request_id: str | None = None) -> list[str]:
+        """List all schemas within a specified catalog."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(sql_client.list_schemas, catalog, rid)
 
@@ -45,6 +47,7 @@ def build_app(
     async def list_tables(
         catalog: str, schema: str, request_id: str | None = None
     ) -> dict[str, Any]:
+        """List all tables within a specified catalog and schema."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(sql_client.list_tables, catalog, schema, rid)
 
@@ -55,6 +58,7 @@ def build_app(
         table: str,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """Get detailed metadata about a table including columns, data types, and primary keys."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.table_metadata, catalog, schema, table, rid
@@ -67,6 +71,7 @@ def build_app(
         table: str,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """Get partition information and statistics for a table."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.partition_info, catalog, schema, table, rid
@@ -81,6 +86,7 @@ def build_app(
         predicate: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """Retrieve sample data from a table with optional filtering and row limit."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.sample_data, catalog, schema, table, limit, predicate, rid
@@ -93,6 +99,7 @@ def build_app(
         timeout_seconds: int | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """Preview query results with a limited number of rows before full execution."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.preview_query, sql, limit, timeout_seconds, rid
@@ -105,6 +112,7 @@ def build_app(
         timeout_seconds: int | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        """Execute a SQL query and return results with configurable row limit and timeout."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.run_query, sql, limit, timeout_seconds, rid
@@ -174,6 +182,7 @@ def build_app(
 
     @app.tool()
     async def health_check() -> dict[str, str]:
+        """Check the health and connectivity status of the Databricks MCP server."""
         return {"status": "ok"}
 
     return app
