@@ -6,3 +6,4 @@ config.yml
 .venv/
 venv/
 **/*.egg-info
+**/*.skill
