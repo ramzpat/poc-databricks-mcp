@@ -23,6 +23,228 @@ post_date: 2026-01-23
 - Run: `DATABRICKS_MCP_CONFIG=config.yml python -m databricks_mcp.server`
 - Tools expose metadata discovery, sampling, and governed query execution over an allowlisted catalog/schema set.
 
+## Remote Usage with Claude Desktop or Other MCP Clients
+
+This MCP server can be used remotely without cloning the repository. Use `uvx` (part of `uv` package manager) to run the server directly from the Git repository.
+
+### Prerequisites
+1. Install `uv` (includes `uvx`): https://github.com/astral-sh/uv
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. Create a configuration file `config.yml` in a known location on your system
+3. Set up your Databricks credentials as environment variables
+
+### Using with Claude Desktop (Recommended)
+
+#### Step 1: Create your config file
+Create a `config.yml` file anywhere on your system (e.g., `~/.config/databricks-mcp/config.yml` on macOS/Linux or `%USERPROFILE%\.config\databricks-mcp\config.yml` on Windows):
+
+```yaml
+warehouse:
+  host: ${DATABRICKS_HOST}
+  http_path: ${DATABRICKS_HTTP_PATH}
+  warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
+auth:
+  oauth:
+    client_id: ${DATABRICKS_CLIENT_ID}
+    client_secret: ${DATABRICKS_CLIENT_SECRET}
+    token_url: ${DATABRICKS_TOKEN_URL}
+scopes:
+  catalogs:
+    main:
+      schemas:
+        - default
+    # Add more catalogs as needed
+    # my_catalog:
+    #   schemas:
+    #     - schema1
+    #     - schema2
+limits:
+  max_rows: 10000
+  sample_max_rows: 1000
+  query_timeout_seconds: 60
+  max_concurrent_queries: 5
+  allow_statement_types:
+    - SELECT
+observability:
+  log_level: info
+  propagate_request_ids: true
+```
+
+#### Step 2: Configure Claude Desktop
+
+Edit your Claude Desktop configuration file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+Add this configuration to run from the Git repository:
+
+```json
+{
+  "mcpServers": {
+    "databricks-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
+        "--python",
+        "3.11",
+        "databricks-mcp"
+      ],
+      "env": {
+        "DATABRICKS_MCP_CONFIG": "/absolute/path/to/your/config.yml",
+        "DATABRICKS_HOST": "https://your-workspace.cloud.databricks.com",
+        "DATABRICKS_HTTP_PATH": "/sql/1.0/warehouses/your-warehouse-id",
+        "DATABRICKS_WAREHOUSE_ID": "your-warehouse-id",
+        "DATABRICKS_CLIENT_ID": "your-client-id",
+        "DATABRICKS_CLIENT_SECRET": "your-client-secret",
+        "DATABRICKS_TOKEN_URL": "https://your-workspace.cloud.databricks.com/oidc/v1/token"
+      }
+    }
+  }
+}
+```
+
+**Important Notes:**
+- Replace `/absolute/path/to/your/config.yml` with the actual absolute path to your config file
+- Replace all `your-*` placeholders with your actual Databricks credentials
+- On Windows, use forward slashes or double backslashes in paths: `C:/Users/YourName/.config/databricks-mcp/config.yml` or `C:\\Users\\YourName\\.config\\databricks-mcp\\config.yml`
+
+#### Step 3: Restart Claude Desktop
+
+After saving the configuration, restart Claude Desktop. The Databricks MCP server will be available automatically.
+
+### Alternative: Using from PyPI (When Published)
+
+If this package is published to PyPI, you can simplify the configuration:
+
+```json
+{
+  "mcpServers": {
+    "databricks-mcp": {
+      "command": "uvx",
+      "args": [
+        "databricks-mcp",
+        "--python",
+        "3.11"
+      ],
+      "env": {
+        "DATABRICKS_MCP_CONFIG": "/absolute/path/to/your/config.yml",
+        "DATABRICKS_HOST": "https://your-workspace.cloud.databricks.com",
+        "DATABRICKS_HTTP_PATH": "/sql/1.0/warehouses/your-warehouse-id",
+        "DATABRICKS_WAREHOUSE_ID": "your-warehouse-id",
+        "DATABRICKS_CLIENT_ID": "your-client-id",
+        "DATABRICKS_CLIENT_SECRET": "your-client-secret",
+        "DATABRICKS_TOKEN_URL": "https://your-workspace.cloud.databricks.com/oidc/v1/token"
+      }
+    }
+  }
+}
+```
+
+### Alternative: Config File in Current Working Directory
+
+If you prefer to place your `config.yml` in a specific directory, you can set that as the working directory or use an absolute path:
+
+```json
+{
+  "mcpServers": {
+    "databricks-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
+        "--python",
+        "3.11",
+        "databricks-mcp"
+      ],
+      "env": {
+        "DATABRICKS_MCP_CONFIG": "config.yml",
+        "DATABRICKS_HOST": "https://your-workspace.cloud.databricks.com",
+        "DATABRICKS_HTTP_PATH": "/sql/1.0/warehouses/your-warehouse-id",
+        "DATABRICKS_WAREHOUSE_ID": "your-warehouse-id",
+        "DATABRICKS_CLIENT_ID": "your-client-id",
+        "DATABRICKS_CLIENT_SECRET": "your-client-secret",
+        "DATABRICKS_TOKEN_URL": "https://your-workspace.cloud.databricks.com/oidc/v1/token"
+      }
+    }
+  }
+}
+```
+
+**Note**: The server looks for `config.example.yml` by default if `DATABRICKS_MCP_CONFIG` is not set. Using an absolute path is recommended for clarity and reliability.
+
+### Environment Variables Reference
+
+All configuration values support environment variable substitution using `${VAR_NAME}` syntax in the `config.yml` file. You can choose to:
+
+1. **Store secrets only in environment variables** (recommended):
+   - Keep sensitive values (client_secret, tokens) only in the MCP client config's `env` section
+   - Reference them in `config.yml` with `${VARIABLE_NAME}`
+
+2. **Mix config file and environment variables**:
+   - Store non-sensitive config in `config.yml`
+   - Store secrets as environment variables
+
+Example with minimal environment variables:
+```json
+{
+  "mcpServers": {
+    "databricks-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/ramzpat/poc-databricks-mcp.git",
+        "--python",
+        "3.11",
+        "databricks-mcp"
+      ],
+      "env": {
+        "DATABRICKS_MCP_CONFIG": "/path/to/config.yml",
+        "DATABRICKS_CLIENT_SECRET": "your-secret-here"
+      }
+    }
+  }
+}
+```
+
+And in `config.yml`, hardcode non-sensitive values:
+```yaml
+warehouse:
+  host: "https://your-workspace.cloud.databricks.com"
+  http_path: "/sql/1.0/warehouses/warehouse-id"
+  warehouse_id: "warehouse-id"
+auth:
+  oauth:
+    client_id: "your-client-id"
+    client_secret: ${DATABRICKS_CLIENT_SECRET}  # From environment
+    token_url: "https://your-workspace.cloud.databricks.com/oidc/v1/token"
+```
+
+### Testing Your Configuration
+
+To verify your configuration works, you can test it manually from the command line:
+
+```bash
+# Set environment variables
+export DATABRICKS_MCP_CONFIG="/path/to/your/config.yml"
+export DATABRICKS_HOST="https://your-workspace.cloud.databricks.com"
+export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/your-warehouse-id"
+export DATABRICKS_WAREHOUSE_ID="your-warehouse-id"
+export DATABRICKS_CLIENT_ID="your-client-id"
+export DATABRICKS_CLIENT_SECRET="your-client-secret"
+export DATABRICKS_TOKEN_URL="https://your-workspace.cloud.databricks.com/oidc/v1/token"
+
+# Run with uvx from Git
+uvx --from git+https://github.com/ramzpat/poc-databricks-mcp.git databricks-mcp
+
+# Or run directly with Python (if you cloned the repo)
+python -m databricks_mcp.server
+```
+
 ## Quick setup (dev)
 - Create venv and install: `python -m venv .venv && source .venv/bin/activate && pip install -e .[test]`
 - Export required env vars (example):

@@ -21,5 +21,8 @@ test = [
     "pytest-mock>=3.12",
 ]
 
+[project.scripts]
+databricks-mcp = "databricks_mcp.server:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
