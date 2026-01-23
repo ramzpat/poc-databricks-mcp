@@ -28,7 +28,7 @@ post_date: 2026-01-23
 This MCP server can be used remotely without cloning the repository. Use `uvx` (part of `uv` package manager) to run the server directly from the Git repository.
 
 ### Prerequisites
-1. Install `uv` (includes `uvx`): https://github.com/astral-sh/uv
+1. Install `uv` (includes `uvx`): https://docs.astral.sh/uv/getting-started/installation/
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
