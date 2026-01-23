@@ -260,7 +260,12 @@ class DatabricksSQLClient:
                     session_configuration={"ansi_mode": "true"},
                 ) as connection:
                     with connection.cursor() as cursor:
-                        cursor.execute(sql, params, timeout=timeout)
+                        try:
+                            cursor.execute(sql, params, timeout=timeout)
+                        except TypeError as exc:
+                            if "timeout" not in str(exc):
+                                raise
+                            cursor.execute(sql, params)
                         rows_raw = (
                             cursor.fetchmany(fetch_size)
                             if fetch_size
