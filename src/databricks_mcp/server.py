@@ -58,7 +58,7 @@ def build_app(
         table: str,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        """Get detailed metadata about a table including columns, data types, and primary keys."""
+        """Get detailed metadata about a table or view including columns and primary keys."""
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.table_metadata, catalog, schema, table, rid
@@ -99,7 +99,10 @@ def build_app(
         timeout_seconds: int | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        """Preview query results with a limited number of rows before full execution."""
+        """Preview query results with a limited number of rows before full execution.
+
+        Do not start the SQL with a comment; guardrails block comment-first statements.
+        """
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.preview_query, sql, limit, timeout_seconds, rid
@@ -112,78 +115,81 @@ def build_app(
         timeout_seconds: int | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        """Execute a SQL query and return results with configurable row limit and timeout."""
+        """Execute a SQL query and return results with configurable row limit and timeout.
+
+        Do not start the SQL with a comment; guardrails block comment-first statements.
+        """
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.run_query, sql, limit, timeout_seconds, rid
         )
 
-    @app.tool()
-    async def execute_python_code(
-        code: str,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Execute Python code via Databricks serverless compute."""
-        rid = _request_id(request_id)
-        return await asyncio.to_thread(jobs_client.execute_python_code, code, rid)
+    # @app.tool()
+    # async def execute_python_code(
+    #     code: str,
+    #     request_id: str | None = None,
+    # ) -> dict[str, Any]:
+    #     """Execute Python code via Databricks serverless compute."""
+    #     rid = _request_id(request_id)
+    #     return await asyncio.to_thread(jobs_client.execute_python_code, code, rid)
 
-    @app.tool()
-    async def submit_python_job(
-        job_name: str,
-        code: str,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Submit a Python job for async execution."""
-        rid = _request_id(request_id)
-        return await asyncio.to_thread(
-            jobs_client.submit_python_job, job_name, code, rid
-        )
+    # @app.tool()
+    # async def submit_python_job(
+    #     job_name: str,
+    #     code: str,
+    #     request_id: str | None = None,
+    # ) -> dict[str, Any]:
+    #     """Submit a Python job for async execution."""
+    #     rid = _request_id(request_id)
+    #     return await asyncio.to_thread(
+    #         jobs_client.submit_python_job, job_name, code, rid
+    #     )
 
-    @app.tool()
-    async def submit_notebook_job(
-        job_name: str,
-        notebook_path: str,
-        parameters: dict[str, str] | None = None,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Submit a notebook for async execution."""
-        rid = _request_id(request_id)
-        return await asyncio.to_thread(
-            jobs_client.submit_notebook_job, job_name, notebook_path, parameters, rid
-        )
+    # @app.tool()
+    # async def submit_notebook_job(
+    #     job_name: str,
+    #     notebook_path: str,
+    #     parameters: dict[str, str] | None = None,
+    #     request_id: str | None = None,
+    # ) -> dict[str, Any]:
+    #     """Submit a notebook for async execution."""
+    #     rid = _request_id(request_id)
+    #     return await asyncio.to_thread(
+    #         jobs_client.submit_notebook_job, job_name, notebook_path, parameters, rid
+    #     )
 
-    @app.tool()
-    async def get_job_status(
-        run_id: int,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Get the status of a job run."""
-        rid = _request_id(request_id)
-        return await asyncio.to_thread(jobs_client.get_job_status, run_id, rid)
+    # @app.tool()
+    # async def get_job_status(
+    #     run_id: int,
+    #     request_id: str | None = None,
+    # ) -> dict[str, Any]:
+    #     """Get the status of a job run."""
+    #     rid = _request_id(request_id)
+    #     return await asyncio.to_thread(jobs_client.get_job_status, run_id, rid)
 
-    @app.tool()
-    async def get_job_output(
-        run_id: int,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Retrieve output and logs from a completed job run."""
-        rid = _request_id(request_id)
-        return await asyncio.to_thread(jobs_client.get_job_run_output, run_id, rid)
+    # @app.tool()
+    # async def get_job_output(
+    #     run_id: int,
+    #     request_id: str | None = None,
+    # ) -> dict[str, Any]:
+    #     """Retrieve output and logs from a completed job run."""
+    #     rid = _request_id(request_id)
+    #     return await asyncio.to_thread(jobs_client.get_job_run_output, run_id, rid)
 
-    @app.tool()
-    async def cancel_run(
-        run_id: int,
-        request_id: str | None = None,
-    ) -> dict[str, str]:
-        """Cancel an active job run."""
-        rid = _request_id(request_id)
-        await asyncio.to_thread(jobs_client.cancel_run, run_id, rid)
-        return {"status": "cancelled", "run_id": str(run_id)}
+    # @app.tool()
+    # async def cancel_run(
+    #     run_id: int,
+    #     request_id: str | None = None,
+    # ) -> dict[str, str]:
+    #     """Cancel an active job run."""
+    #     rid = _request_id(request_id)
+    #     await asyncio.to_thread(jobs_client.cancel_run, run_id, rid)
+    #     return {"status": "cancelled", "run_id": str(run_id)}
 
-    @app.tool()
-    async def health_check() -> dict[str, str]:
-        """Check the health and connectivity status of the Databricks MCP server."""
-        return {"status": "ok"}
+    # @app.tool()
+    # async def health_check() -> dict[str, str]:
+    #     """Check the health and connectivity status of the Databricks MCP server."""
+    #     return {"status": "ok"}
 
     return app
 
