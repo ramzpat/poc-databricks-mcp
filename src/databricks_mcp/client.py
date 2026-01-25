@@ -69,6 +69,11 @@ class DatabricksSQLClient:
         ensure_catalog_allowed(catalog, self._config.scopes)
         ensure_schema_allowed(catalog, schema, self._config.scopes)
         safe_table = sanitize_identifier(table, "table")
+        table_type_sql = (
+            "SELECT table_type "
+            "FROM system.information_schema.tables "
+            "WHERE table_catalog = ? AND table_schema = ? AND table_name = ?"
+        )
         columns_sql = (
             "SELECT column_name, data_type, is_nullable, comment, ordinal_position "
             "FROM system.information_schema.columns "
@@ -86,6 +91,34 @@ class DatabricksSQLClient:
         )
         detail_sql = f"DESCRIBE DETAIL `{catalog}`.`{schema}`.`{safe_table}`"
 
+        table_type_rows, _ = self._execute(
+            table_type_sql,
+            (catalog, schema, safe_table),
+            limit=None,
+            request_id=request_id,
+        )
+        table_type = (
+            table_type_rows[0].get("table_type") if table_type_rows else None
+        )
+        is_view = (table_type or "").upper() == "VIEW"
+
+        view_definition = None
+        if is_view:
+            view_sql = (
+                "SELECT view_definition "
+                "FROM system.information_schema.views "
+                "WHERE table_catalog = ? AND table_schema = ? AND table_name = ?"
+            )
+            view_rows, _ = self._execute(
+                view_sql,
+                (catalog, schema, safe_table),
+                limit=None,
+                request_id=request_id,
+            )
+            view_definition = (
+                view_rows[0].get("view_definition") if view_rows else None
+            )
+
         columns, _ = self._execute(
             columns_sql,
             (catalog, schema, safe_table),
@@ -95,15 +128,18 @@ class DatabricksSQLClient:
         primary_keys, _ = self._execute(
             pk_sql, (catalog, schema, safe_table), limit=None, request_id=request_id
         )
-        details, _ = self._execute(
-            detail_sql, params=None, limit=None, request_id=request_id
-        )
-        detail = details[0] if details else {}
+        detail = {}
+        if not is_view:
+            details, _ = self._execute(
+                detail_sql, params=None, limit=None, request_id=request_id
+            )
+            detail = details[0] if details else {}
 
         return {
             "catalog": catalog,
             "schema": schema,
             "table": table,
+            "table_type": table_type,
             "columns": [
                 {
                     "name": col.get("column_name"),
@@ -117,6 +153,7 @@ class DatabricksSQLClient:
             "primary_keys": [pk.get("column_name") for pk in primary_keys],
             "partition_columns": detail.get("partitionColumns") or [],
             "row_count": detail.get("numRows"),
+            "view_definition": view_definition,
         }
 
     def partition_info(
@@ -308,10 +345,11 @@ class DatabricksSQLClient:
                         request_id=request_id,
                         query_id=query_id,
                         statement_type=statement_type,
+                        error_message=str(exc),
                     ),
                 )
                 raise QueryError(
-                    "Query execution failed; see logs for details"
+                    f"Query execution failed: {exc}"
                 ) from exc
 
         columns = [col[0] for col in description]
