@@ -309,11 +309,11 @@ python -m databricks_mcp.server
   - `metric_type`: One of COUNT, SUM, AVG, MIN, MAX
   - `metric_column`: Column to aggregate on (use "*" for COUNT)
   - `predicate`: Optional WHERE clause to filter rows before aggregation
-- **`create_temp_table(temp_table_name, source_query)`**: Create a temporary table from multiple views or data sources for complex lead generation workflows.
+- **`create_temp_table(temp_table_name, source_query)`**: Create a global temporary table from multiple views or data sources for complex lead generation workflows.
   - `temp_table_name`: Name for the temporary table (alphanumeric and underscores only)
   - `source_query`: SELECT query that combines multiple tables/views with JOINs, filters, and aggregations
-  - Returns metadata about the created table including row count
-  - The temporary table is session-scoped and can be used in subsequent queries for the duration of the AI agent session
+  - Returns metadata about the created table including row count and the full qualified name (global_temp.table_name)
+  - The temporary table uses GLOBAL TEMPORARY VIEW for cross-connection accessibility within the session
   - All referenced tables must be within allowlisted catalogs/schemas
   - Example use case: Combine customer purchase data with engagement metrics to identify high-value leads
 
@@ -334,7 +334,7 @@ python -m databricks_mcp.server
 ### Example: Multi-Source Lead Generation
 
 ```python
-# Step 1: Create a temporary table combining multiple data sources
+# Step 1: Create a global temporary table combining multiple data sources
 result = create_temp_table(
     temp_table_name="qualified_leads",
     source_query="""
@@ -356,21 +356,20 @@ result = create_temp_table(
             AND e.last_active_date >= DATE_SUB(CURRENT_DATE(), 90)
     """
 )
-# Returns: {"temp_table_name": "qualified_leads", "row_count": 1523, "status": "created"}
+# Returns: {"temp_table_name": "global_temp.qualified_leads", "row_count": 1523, "status": "created"}
 
-# Step 2: Get aggregated metrics from the temporary table
-count_by_industry = aggregate_metric(
-    catalog="",  # Not needed for temp tables
-    schema="",   # Not needed for temp tables
+# Step 2: Use the global temporary table in subsequent queries
+# The table name from the response should be used for queries (global_temp.qualified_leads)
+count_result = approx_count(
+    catalog="global_temp",
+    schema="",  # Not used for global temp tables
     table="qualified_leads",
-    metric_type="COUNT",
-    metric_column="*",
-    predicate="GROUP BY industry"
+    predicate="industry = 'Technology'"
 )
 
-# Step 3: Use the temp table in subsequent queries during the session
+# Step 3: Get aggregated metrics from the global temporary table
 avg_purchase = aggregate_metric(
-    catalog="",
+    catalog="global_temp",
     schema="",
     table="qualified_leads",
     metric_type="AVG",
@@ -378,7 +377,7 @@ avg_purchase = aggregate_metric(
 )
 ```
 
-Note: Temporary tables are session-scoped and will be automatically cleaned up when the AI agent session ends.
+**Note**: Global temporary tables persist across connections within the same Databricks session/cluster. They are accessible via the `global_temp` database and will be automatically cleaned up when the cluster or session terminates.
 
 ## Observability
 - Structured logs include request IDs/query IDs; configure log level via `observability.log_level`.

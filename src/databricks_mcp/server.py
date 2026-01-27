@@ -112,11 +112,11 @@ def build_app(
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a temporary table from a SELECT query combining multiple views or data sources.
+        Create a global temporary table from a SELECT query combining multiple views or data sources.
         
         This enables aggregating data from multiple tables/views with different business logics
-        for lead generation purposes. The temporary table is session-scoped and persists for
-        the duration of the AI agent session, allowing subsequent queries on the combined data.
+        for lead generation purposes. The temporary table uses GLOBAL TEMPORARY VIEW which persists
+        across connections within the same Databricks session, allowing subsequent queries on the combined data.
         
         Parameters:
         - temp_table_name: Name for the temporary table (alphanumeric and underscores only)
@@ -129,7 +129,8 @@ def build_app(
                        JOIN catalog.schema.engagement t2 ON t1.customer_id = t2.customer_id 
                        WHERE t1.total_purchases > 1000 AND t2.engagement_score > 0.7"
         
-        Returns metadata about the created table including row count.
+        Returns metadata about the created table including row count and full qualified name (global_temp.table_name).
+        Use the returned table name to query the temporary table in subsequent operations.
         """
         rid = _request_id(request_id)
         return await asyncio.to_thread(

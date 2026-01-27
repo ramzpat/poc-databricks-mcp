@@ -16,11 +16,17 @@ def sanitize_identifier(identifier: str, field_name: str) -> str:
 
 
 def ensure_catalog_allowed(catalog: str, scopes: ScopeConfig) -> None:
+    # Allow global_temp catalog for temporary tables
+    if catalog == "global_temp":
+        return
     if catalog not in scopes.catalogs:
         raise ScopeError(f"Catalog {catalog} is not allowlisted")
 
 
 def ensure_schema_allowed(catalog: str, schema: str, scopes: ScopeConfig) -> None:
+    # Allow global_temp catalog without schema validation (temp tables don't use schemas)
+    if catalog == "global_temp":
+        return
     allowed_schemas = scopes.catalogs.get(catalog, [])
     if schema not in allowed_schemas:
         raise ScopeError(f"Schema {schema} is not allowlisted for catalog {catalog}")

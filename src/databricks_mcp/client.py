@@ -297,11 +297,11 @@ class DatabricksSQLClient:
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a temporary table from a SELECT query combining multiple views or data sources.
+        Create a global temporary table from a SELECT query combining multiple views or data sources.
 
         This enables AI agents to aggregate data from multiple tables/views with different 
-        business logics for lead generation purposes. The temporary table is session-scoped
-        and will be automatically dropped when the session ends.
+        business logics for lead generation purposes. The temporary table uses GLOBAL TEMPORARY VIEW
+        which persists across connections within the same session/cluster.
 
         Parameters:
         temp_table_name (str): Name for the temporary table
@@ -339,43 +339,55 @@ class DatabricksSQLClient:
                 f"source_query must be a SELECT statement, got: {statement_type}"
             )
         
-        # Create temporary table using CREATE TEMPORARY VIEW (safer than CREATE TABLE)
-        create_sql = f"CREATE OR REPLACE TEMPORARY VIEW {safe_temp_table} AS {source_query}"
+        # Check for potential SQL injection (statement terminators)
+        if ";" in source_query:
+            raise GuardrailError(
+                "source_query cannot contain statement terminators (semicolons)"
+            )
+        
+        # Create global temporary table using CREATE GLOBAL TEMPORARY VIEW
+        # Use global_temp database prefix for cross-connection accessibility
+        create_sql = f"CREATE OR REPLACE GLOBAL TEMPORARY VIEW global_temp.`{safe_temp_table}` AS {source_query}"
         
         timeout_value = effective_timeout(None, self._config.limits)
         
-        # Execute the create statement
-        try:
-            self._execute(
-                create_sql,
-                params=None,
-                limit=None,
-                timeout=timeout_value,
-                request_id=request_id,
-            )
-        except Exception as exc:
-            self._log.warning(
-                "Temporary table creation failed",
-                extra=log_extra(
-                    request_id=request_id,
-                    temp_table_name=safe_temp_table,
-                    error_message=str(exc),
-                ),
-            )
-            raise QueryError(
-                f"Failed to create temporary table '{safe_temp_table}': {exc}"
-            ) from exc
+        # Execute the create statement and count query in a single connection
+        access_token = self._token_provider.get_token()
+        query_id = str(uuid.uuid4())
         
-        # Get row count of the created temporary table
-        count_sql = f"SELECT COUNT(*) as row_count FROM {safe_temp_table}"
-        rows, _ = self._execute(
-            count_sql,
-            params=None,
-            limit=None,
-            timeout=timeout_value,
-            request_id=request_id,
-        )
-        row_count = rows[0].get("row_count", 0) if rows else 0
+        with self._semaphore:
+            try:
+                with databricks.sql.connect(
+                    server_hostname=self._config.warehouse.host,
+                    http_path=self._config.warehouse.http_path,
+                    access_token=access_token,
+                    session_configuration={
+                        "ansi_mode": "true",
+                    },
+                ) as connection:
+                    with connection.cursor() as cursor:
+                        # Create the temporary view
+                        cursor.execute(create_sql, None)
+                        
+                        # Get row count of the created temporary table
+                        count_sql = f"SELECT COUNT(*) as row_count FROM global_temp.`{safe_temp_table}`"
+                        cursor.execute(count_sql, None)
+                        count_rows = cursor.fetchall()
+                        
+            except DatabricksError as exc:
+                self._log.warning(
+                    "Temporary table creation failed",
+                    extra=log_extra(
+                        request_id=request_id,
+                        temp_table_name=safe_temp_table,
+                        error_message=str(exc),
+                    ),
+                )
+                raise QueryError(
+                    f"Failed to create temporary table '{safe_temp_table}': {exc}"
+                ) from exc
+        
+        row_count = count_rows[0][0] if count_rows else 0
         
         self._log.info(
             "Temporary table created",
@@ -387,7 +399,7 @@ class DatabricksSQLClient:
         )
         
         return {
-            "temp_table_name": safe_temp_table,
+            "temp_table_name": f"global_temp.{safe_temp_table}",
             "row_count": row_count,
             "status": "created",
         }
@@ -420,8 +432,12 @@ class DatabricksSQLClient:
         QueryError: If query execution fails
         """
         statement_type = detect_statement_type(sql)
-        # Allow CREATE for temporary table creation even if not in allowlist
-        if not (statement_type == "CREATE" and "TEMPORARY" in sql.upper()):
+        # Allow CREATE GLOBAL TEMPORARY VIEW for temporary table creation even if not in allowlist
+        is_global_temp_create = (
+            statement_type == "CREATE" 
+            and sql.strip().upper().startswith("CREATE OR REPLACE GLOBAL TEMPORARY VIEW")
+        )
+        if not is_global_temp_create:
             ensure_statement_allowed(
                 statement_type, self._config.limits.allow_statement_types
             )
