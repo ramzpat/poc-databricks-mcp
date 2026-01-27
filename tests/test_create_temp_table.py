@@ -265,13 +265,15 @@ class TestCreateTempTable:
     
     def test_query_execution_failure(self) -> None:
         """Test proper error handling when query execution fails."""
+        from databricks.sql.exc import Error as DatabricksError
+        
         config = create_test_config()
         token_provider = create_mock_token_provider()
         client = DatabricksSQLClient(config, token_provider)
         
         with patch('databricks_mcp.client.databricks.sql.connect') as mock_connect:
             # Simulate a Databricks error
-            mock_connect.return_value.__enter__.side_effect = Exception("Connection failed")
+            mock_connect.return_value.__enter__.side_effect = DatabricksError("Connection failed")
             
             with pytest.raises(QueryError, match="Failed to create temporary table"):
                 client.create_temp_table(
