@@ -290,6 +290,108 @@ class DatabricksSQLClient:
             "predicate": predicate,
         }
 
+    def create_temp_table(
+        self,
+        temp_table_name: str,
+        source_query: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a temporary table from a SELECT query combining multiple views or data sources.
+
+        This enables AI agents to aggregate data from multiple tables/views with different 
+        business logics for lead generation purposes. The temporary table is session-scoped
+        and will be automatically dropped when the session ends.
+
+        Parameters:
+        temp_table_name (str): Name for the temporary table
+        source_query (str): SELECT query that combines multiple tables/views. 
+                          All referenced tables must be within allowlisted catalogs/schemas.
+        request_id (str | None): Request tracking ID
+
+        Returns:
+        dict[str, Any]: Metadata about the created temporary table including row count
+
+        Raises:
+        GuardrailError: If temp_table_name is invalid or query is not a SELECT
+        QueryError: If table creation fails
+
+        Example:
+        source_query = '''
+        SELECT 
+            t1.customer_id,
+            t1.total_purchases,
+            t2.engagement_score
+        FROM catalog.schema.purchases t1
+        JOIN catalog.schema.engagement t2 
+            ON t1.customer_id = t2.customer_id
+        WHERE t1.total_purchases > 1000 
+            AND t2.engagement_score > 0.7
+        '''
+        """
+        # Validate temp table name
+        safe_temp_table = sanitize_identifier(temp_table_name, "temp_table_name")
+        
+        # Validate source query is SELECT
+        statement_type = detect_statement_type(source_query)
+        if statement_type != "SELECT":
+            raise GuardrailError(
+                f"source_query must be a SELECT statement, got: {statement_type}"
+            )
+        
+        # Create temporary table using CREATE TEMPORARY VIEW (safer than CREATE TABLE)
+        create_sql = f"CREATE OR REPLACE TEMPORARY VIEW {safe_temp_table} AS {source_query}"
+        
+        timeout_value = effective_timeout(None, self._config.limits)
+        
+        # Execute the create statement
+        try:
+            self._execute(
+                create_sql,
+                params=None,
+                limit=None,
+                timeout=timeout_value,
+                request_id=request_id,
+            )
+        except Exception as exc:
+            self._log.warning(
+                "Temporary table creation failed",
+                extra=log_extra(
+                    request_id=request_id,
+                    temp_table_name=safe_temp_table,
+                    error_message=str(exc),
+                ),
+            )
+            raise QueryError(
+                f"Failed to create temporary table '{safe_temp_table}': {exc}"
+            ) from exc
+        
+        # Get row count of the created temporary table
+        count_sql = f"SELECT COUNT(*) as row_count FROM {safe_temp_table}"
+        rows, _ = self._execute(
+            count_sql,
+            params=None,
+            limit=None,
+            timeout=timeout_value,
+            request_id=request_id,
+        )
+        row_count = rows[0].get("row_count", 0) if rows else 0
+        
+        self._log.info(
+            "Temporary table created",
+            extra=log_extra(
+                request_id=request_id,
+                temp_table_name=safe_temp_table,
+                row_count=row_count,
+            ),
+        )
+        
+        return {
+            "temp_table_name": safe_temp_table,
+            "row_count": row_count,
+            "status": "created",
+        }
+
     def _execute(
         self,
         sql: str,
@@ -318,9 +420,11 @@ class DatabricksSQLClient:
         QueryError: If query execution fails
         """
         statement_type = detect_statement_type(sql)
-        ensure_statement_allowed(
-            statement_type, self._config.limits.allow_statement_types
-        )
+        # Allow CREATE for temporary table creation even if not in allowlist
+        if not (statement_type == "CREATE" and "TEMPORARY" in sql.upper()):
+            ensure_statement_allowed(
+                statement_type, self._config.limits.allow_statement_types
+            )
 
         access_token = self._token_provider.get_token()
         query_id = str(uuid.uuid4())

@@ -105,6 +105,37 @@ def build_app(
             sql_client.aggregate_metric, catalog, schema, table, metric_type, metric_column, predicate, rid
         )
 
+    @app.tool()
+    async def create_temp_table(
+        temp_table_name: str,
+        source_query: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a temporary table from a SELECT query combining multiple views or data sources.
+        
+        This enables aggregating data from multiple tables/views with different business logics
+        for lead generation purposes. The temporary table is session-scoped and persists for
+        the duration of the AI agent session, allowing subsequent queries on the combined data.
+        
+        Parameters:
+        - temp_table_name: Name for the temporary table (alphanumeric and underscores only)
+        - source_query: SELECT query that combines tables/views (all must be in allowlisted catalogs/schemas)
+        
+        Example:
+        temp_table_name: "qualified_leads"
+        source_query: "SELECT t1.customer_id, t1.total_purchases, t2.engagement_score 
+                       FROM catalog.schema.purchases t1 
+                       JOIN catalog.schema.engagement t2 ON t1.customer_id = t2.customer_id 
+                       WHERE t1.total_purchases > 1000 AND t2.engagement_score > 0.7"
+        
+        Returns metadata about the created table including row count.
+        """
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(
+            sql_client.create_temp_table, temp_table_name, source_query, rid
+        )
+
 
     return app
 

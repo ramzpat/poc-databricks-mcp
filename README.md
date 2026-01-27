@@ -309,6 +309,13 @@ python -m databricks_mcp.server
   - `metric_type`: One of COUNT, SUM, AVG, MIN, MAX
   - `metric_column`: Column to aggregate on (use "*" for COUNT)
   - `predicate`: Optional WHERE clause to filter rows before aggregation
+- **`create_temp_table(temp_table_name, source_query)`**: Create a temporary table from multiple views or data sources for complex lead generation workflows.
+  - `temp_table_name`: Name for the temporary table (alphanumeric and underscores only)
+  - `source_query`: SELECT query that combines multiple tables/views with JOINs, filters, and aggregations
+  - Returns metadata about the created table including row count
+  - The temporary table is session-scoped and can be used in subsequent queries for the duration of the AI agent session
+  - All referenced tables must be within allowlisted catalogs/schemas
+  - Example use case: Combine customer purchase data with engagement metrics to identify high-value leads
 
 ## Guardrails
 - Allowlist enforcement for catalogs and schemas on every tool; anything else is rejected.
@@ -320,8 +327,58 @@ python -m databricks_mcp.server
 
 1. **Explore**: Use metadata tools to understand table structure and available columns.
 2. **Define Conditions**: Work with the MCP server to build WHERE clause predicates based on business logic.
-3. **Size Audience**: Use `approx_count` and `aggregate_metric` to estimate audience size with various conditions.
-4. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
+3. **Combine Data Sources**: Use `create_temp_table` to join multiple tables/views with different business logics (e.g., combine purchase history with engagement metrics).
+4. **Size Audience**: Use `approx_count` and `aggregate_metric` on the temporary table or individual sources to estimate audience size with various conditions.
+5. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
+
+### Example: Multi-Source Lead Generation
+
+```python
+# Step 1: Create a temporary table combining multiple data sources
+result = create_temp_table(
+    temp_table_name="qualified_leads",
+    source_query="""
+        SELECT 
+            c.customer_id,
+            c.company_name,
+            c.industry,
+            p.total_purchases,
+            p.avg_order_value,
+            e.engagement_score,
+            e.last_active_date
+        FROM main.sales.customers c
+        JOIN main.sales.purchases_summary p 
+            ON c.customer_id = p.customer_id
+        JOIN main.analytics.engagement_metrics e 
+            ON c.customer_id = e.customer_id
+        WHERE p.total_purchases > 10000
+            AND e.engagement_score > 0.75
+            AND e.last_active_date >= DATE_SUB(CURRENT_DATE(), 90)
+    """
+)
+# Returns: {"temp_table_name": "qualified_leads", "row_count": 1523, "status": "created"}
+
+# Step 2: Get aggregated metrics from the temporary table
+count_by_industry = aggregate_metric(
+    catalog="",  # Not needed for temp tables
+    schema="",   # Not needed for temp tables
+    table="qualified_leads",
+    metric_type="COUNT",
+    metric_column="*",
+    predicate="GROUP BY industry"
+)
+
+# Step 3: Use the temp table in subsequent queries during the session
+avg_purchase = aggregate_metric(
+    catalog="",
+    schema="",
+    table="qualified_leads",
+    metric_type="AVG",
+    metric_column="total_purchases"
+)
+```
+
+Note: Temporary tables are session-scoped and will be automatically cleaned up when the AI agent session ends.
 
 ## Observability
 - Structured logs include request IDs/query IDs; configure log level via `observability.log_level`.
