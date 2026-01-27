@@ -41,7 +41,7 @@ def create_test_config() -> AppConfig:
 
 
 def test_create_temp_table_success(mocker):
-    """Test successful creation of global temporary table with structured parameters."""
+    """Test successful creation of global temporary view with structured parameters."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -68,7 +68,7 @@ def test_create_temp_table_success(mocker):
     ]
     
     with patch('databricks.sql.connect', return_value=mock_connection):
-        result = client.create_temp_table(
+        result = client.create_temp_view(
             temp_table_name="qualified_leads",
             source_tables=source_tables,
             columns=columns,
@@ -89,7 +89,7 @@ def test_create_temp_table_success(mocker):
 
 
 def test_create_temp_table_with_join(mocker):
-    """Test creating global temporary table with JOIN from multiple sources."""
+    """Test creating global temporary view with JOIN from multiple sources."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -126,7 +126,7 @@ def test_create_temp_table_with_join(mocker):
     ]
     
     with patch('databricks.sql.connect', return_value=mock_connection):
-        result = client.create_temp_table(
+        result = client.create_temp_view(
             temp_table_name="high_value_leads",
             source_tables=source_tables,
             columns=columns,
@@ -150,7 +150,7 @@ def test_create_temp_table_invalid_name():
     columns = [{"table_alias": "c", "column": "id"}]
     
     with pytest.raises(GuardrailError):
-        client.create_temp_table(
+        client.create_temp_view(
             temp_table_name="invalid-name-with-dashes",
             source_tables=source_tables,
             columns=columns,
@@ -164,7 +164,7 @@ def test_create_temp_table_empty_tables():
     client = DatabricksSQLClient(config, token_provider)
     
     with pytest.raises(GuardrailError) as exc_info:
-        client.create_temp_table(
+        client.create_temp_view(
             temp_table_name="test_table",
             source_tables=[],
             columns=[{"table_alias": "t", "column": "id"}],
@@ -182,7 +182,7 @@ def test_create_temp_table_empty_columns():
     source_tables = [{"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}]
     
     with pytest.raises(GuardrailError) as exc_info:
-        client.create_temp_table(
+        client.create_temp_view(
             temp_table_name="test_table",
             source_tables=source_tables,
             columns=[],
@@ -201,7 +201,7 @@ def test_create_temp_table_with_semicolon_in_where():
     columns = [{"table_alias": "c", "column": "id"}]
     
     with pytest.raises(GuardrailError) as exc_info:
-        client.create_temp_table(
+        client.create_temp_view(
             temp_table_name="test_table",
             source_tables=source_tables,
             columns=columns,
@@ -222,7 +222,7 @@ def test_create_temp_table_non_allowlisted_catalog():
     
     from databricks_mcp.errors import ScopeError
     with pytest.raises(ScopeError):
-        client.create_temp_table(
+        client.create_temp_view(
             temp_table_name="test_table",
             source_tables=source_tables,
             columns=columns,
@@ -252,17 +252,17 @@ def test_create_temp_table_creation_failure(mocker):
     
     with patch('databricks.sql.connect', return_value=mock_connection):
         with pytest.raises(QueryError) as exc_info:
-            client.create_temp_table(
+            client.create_temp_view(
                 temp_table_name="test_table",
                 source_tables=source_tables,
                 columns=columns,
             )
     
-    assert "Failed to create temporary table" in str(exc_info.value)
+    assert "Failed to create temporary view" in str(exc_info.value)
 
 
 def test_create_temp_table_with_column_aliases(mocker):
-    """Test creating temporary table with column aliases."""
+    """Test creating temporary view with column aliases."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -286,7 +286,7 @@ def test_create_temp_table_with_column_aliases(mocker):
     ]
     
     with patch('databricks.sql.connect', return_value=mock_connection):
-        result = client.create_temp_table(
+        result = client.create_temp_view(
             temp_table_name="renamed_cols",
             source_tables=source_tables,
             columns=columns,
@@ -299,7 +299,7 @@ def test_create_temp_table_with_column_aliases(mocker):
 
 
 def test_create_temp_table_with_left_join(mocker):
-    """Test creating temporary table with LEFT JOIN."""
+    """Test creating temporary view with LEFT JOIN."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -335,7 +335,7 @@ def test_create_temp_table_with_left_join(mocker):
     ]
     
     with patch('databricks.sql.connect', return_value=mock_connection):
-        result = client.create_temp_table(
+        result = client.create_temp_view(
             temp_table_name="customers_with_prefs",
             source_tables=source_tables,
             columns=columns,

@@ -106,7 +106,7 @@ def build_app(
         )
 
     @app.tool()
-    async def create_temp_table(
+    async def create_temp_view(
         temp_table_name: str,
         source_tables: list[dict[str, str]],
         columns: list[dict[str, str]],
@@ -115,9 +115,9 @@ def build_app(
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a global temporary table by combining multiple views or data sources with structured parameters.
+        Create a global temporary view by combining multiple views or data sources with structured parameters.
         
-        IMPORTANT: Temporary tables are session-scoped and will be automatically deleted when the 
+        IMPORTANT: Temporary views are session-scoped and will be automatically deleted when the 
         Databricks session ends. They CANNOT be accessed from other AI agent sessions or persist beyond 
         the current session.
         
@@ -125,7 +125,7 @@ def build_app(
         must be in allowlisted catalogs/schemas.
         
         Parameters:
-        - temp_table_name: Name for the temporary table (alphanumeric and underscores only)
+        - temp_table_name: Name for the temporary view (alphanumeric and underscores only)
         - source_tables: List of source tables, each with:
             * catalog: Catalog name (must be allowlisted)
             * schema: Schema name (must be allowlisted)  
@@ -159,12 +159,12 @@ def build_app(
         ]
         where_conditions: "p.total_purchases > 1000 AND e.engagement_score > 0.7"
         
-        Returns metadata including temp table name (global_temp.table_name), row count, and a reminder 
-        that the table will be automatically deleted at session end.
+        Returns metadata including temp view name (global_temp.table_name), row count, and a reminder 
+        that the view will be automatically deleted at session end.
         """
         rid = _request_id(request_id)
         return await asyncio.to_thread(
-            sql_client.create_temp_table, temp_table_name, source_tables, columns, 
+            sql_client.create_temp_view, temp_table_name, source_tables, columns, 
             join_conditions, where_conditions, rid
         )
 

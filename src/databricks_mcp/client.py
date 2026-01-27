@@ -290,7 +290,7 @@ class DatabricksSQLClient:
             "predicate": predicate,
         }
 
-    def create_temp_table(
+    def create_temp_view(
         self,
         temp_table_name: str,
         source_tables: list[dict[str, str]],
@@ -300,18 +300,18 @@ class DatabricksSQLClient:
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a global temporary table by combining multiple views or data sources.
+        Create a global temporary view by combining multiple views or data sources.
 
         This enables AI agents to aggregate data from multiple tables/views with structured 
-        business logic for lead generation purposes. The temporary table uses GLOBAL TEMPORARY VIEW
+        business logic for lead generation purposes. The temporary view uses GLOBAL TEMPORARY VIEW
         which is session-scoped and will be automatically deleted when the Databricks session ends.
         
-        IMPORTANT: Temporary tables created with this tool are NOT persistent. They exist only 
+        IMPORTANT: Temporary views created with this tool are NOT persistent. They exist only 
         within the current Databricks session and will be automatically deleted when the session 
         terminates. They cannot be accessed from other AI agent sessions.
 
         Parameters:
-        temp_table_name (str): Name for the temporary table (alphanumeric and underscores only)
+        temp_table_name (str): Name for the temporary view (alphanumeric and underscores only)
         source_tables (list[dict]): List of source tables, each with:
             - catalog (str): Catalog name (must be allowlisted)
             - schema (str): Schema name (must be allowlisted)
@@ -331,11 +331,11 @@ class DatabricksSQLClient:
         request_id (str | None): Request tracking ID
 
         Returns:
-        dict[str, Any]: Metadata about the created temporary table including row count
+        dict[str, Any]: Metadata about the created temporary view including row count
 
         Raises:
         GuardrailError: If parameters are invalid or tables not in allowlist
-        QueryError: If table creation fails
+        QueryError: If view creation fails
 
         Example:
         source_tables = [
@@ -522,7 +522,7 @@ class DatabricksSQLClient:
                         
             except DatabricksError as exc:
                 self._log.warning(
-                    "Temporary table creation failed",
+                    "Temporary view creation failed",
                     extra=log_extra(
                         request_id=request_id,
                         temp_table_name=safe_temp_table,
@@ -530,13 +530,13 @@ class DatabricksSQLClient:
                     ),
                 )
                 raise QueryError(
-                    f"Failed to create temporary table '{safe_temp_table}': {exc}"
+                    f"Failed to create temporary view '{safe_temp_table}': {exc}"
                 ) from exc
         
         row_count = count_rows[0][0] if count_rows else 0
         
         self._log.info(
-            "Temporary table created",
+            "Temporary view created",
             extra=log_extra(
                 request_id=request_id,
                 temp_table_name=safe_temp_table,
@@ -548,7 +548,7 @@ class DatabricksSQLClient:
             "temp_table_name": f"global_temp.{safe_temp_table}",
             "row_count": row_count,
             "status": "created",
-            "note": "This temporary table is session-scoped and will be automatically deleted when the Databricks session ends. It cannot be accessed from other sessions.",
+            "note": "This temporary view is session-scoped and will be automatically deleted when the Databricks session ends. It cannot be accessed from other sessions.",
         }
 
     def _execute(
@@ -579,7 +579,7 @@ class DatabricksSQLClient:
         QueryError: If query execution fails
         """
         statement_type = detect_statement_type(sql)
-        # Allow CREATE GLOBAL TEMPORARY VIEW for temporary table creation even if not in allowlist
+        # Allow CREATE GLOBAL TEMPORARY VIEW for temporary view creation even if not in allowlist
         is_global_temp_create = (
             statement_type == "CREATE" 
             and sql.strip().upper().startswith("CREATE OR REPLACE GLOBAL TEMPORARY VIEW")
