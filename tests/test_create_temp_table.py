@@ -41,7 +41,7 @@ def create_test_config() -> AppConfig:
 
 
 def test_create_temp_table_success(mocker):
-    """Test successful creation of global temporary table."""
+    """Test successful creation of global temporary table with structured parameters."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -59,16 +59,27 @@ def test_create_temp_table_success(mocker):
     mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
     
+    source_tables = [
+        {"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}
+    ]
+    columns = [
+        {"table_alias": "c", "column": "customer_id"},
+        {"table_alias": "c", "column": "score"}
+    ]
+    
     with patch('databricks.sql.connect', return_value=mock_connection):
         result = client.create_temp_table(
             temp_table_name="qualified_leads",
-            source_query="SELECT * FROM main.default.customers WHERE score > 80",
+            source_tables=source_tables,
+            columns=columns,
+            where_conditions="c.score > 80",
             request_id="test-request-1",
         )
     
     assert result["temp_table_name"] == "global_temp.qualified_leads"
     assert result["row_count"] == 100
     assert result["status"] == "created"
+    assert "session-scoped" in result["note"]
     
     # Verify CREATE GLOBAL TEMPORARY VIEW was called
     assert mock_cursor.execute.call_count == 2
@@ -95,22 +106,32 @@ def test_create_temp_table_with_join(mocker):
     mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
     
-    source_query = """
-    SELECT 
-        t1.customer_id,
-        t1.total_purchases,
-        t2.engagement_score
-    FROM main.default.purchases t1
-    JOIN main.analytics.engagement t2 
-        ON t1.customer_id = t2.customer_id
-    WHERE t1.total_purchases > 1000 
-        AND t2.engagement_score > 0.7
-    """
+    source_tables = [
+        {"catalog": "main", "schema": "default", "table": "purchases", "alias": "p"},
+        {"catalog": "main", "schema": "analytics", "table": "engagement", "alias": "e"}
+    ]
+    columns = [
+        {"table_alias": "p", "column": "customer_id"},
+        {"table_alias": "p", "column": "total_purchases", "alias": "total_spent"},
+        {"table_alias": "e", "column": "engagement_score"}
+    ]
+    join_conditions = [
+        {
+            "type": "INNER",
+            "left_table": "p",
+            "left_column": "customer_id",
+            "right_table": "e",
+            "right_column": "customer_id"
+        }
+    ]
     
     with patch('databricks.sql.connect', return_value=mock_connection):
         result = client.create_temp_table(
             temp_table_name="high_value_leads",
-            source_query=source_query,
+            source_tables=source_tables,
+            columns=columns,
+            join_conditions=join_conditions,
+            where_conditions="p.total_purchases > 1000 AND e.engagement_score > 0.7",
             request_id="test-request-2",
         )
     
@@ -125,43 +146,19 @@ def test_create_temp_table_invalid_name():
     token_provider = MagicMock()
     client = DatabricksSQLClient(config, token_provider)
     
+    source_tables = [{"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}]
+    columns = [{"table_alias": "c", "column": "id"}]
+    
     with pytest.raises(GuardrailError):
         client.create_temp_table(
             temp_table_name="invalid-name-with-dashes",
-            source_query="SELECT * FROM main.default.customers",
+            source_tables=source_tables,
+            columns=columns,
         )
 
 
-def test_create_temp_table_non_select_query():
-    """Test that non-SELECT queries are rejected."""
-    config = create_test_config()
-    token_provider = MagicMock()
-    client = DatabricksSQLClient(config, token_provider)
-    
-    with pytest.raises(GuardrailError) as exc_info:
-        client.create_temp_table(
-            temp_table_name="bad_table",
-            source_query="INSERT INTO main.default.customers VALUES (1, 'test')",
-        )
-    
-    assert "must be a SELECT statement" in str(exc_info.value)
-
-
-def test_create_temp_table_empty_query():
-    """Test that empty query is rejected."""
-    config = create_test_config()
-    token_provider = MagicMock()
-    client = DatabricksSQLClient(config, token_provider)
-    
-    with pytest.raises(GuardrailError):
-        client.create_temp_table(
-            temp_table_name="test_table",
-            source_query="   ",
-        )
-
-
-def test_create_temp_table_with_semicolon():
-    """Test that queries with semicolons (statement terminators) are rejected."""
+def test_create_temp_table_empty_tables():
+    """Test that empty source tables list is rejected."""
     config = create_test_config()
     token_provider = MagicMock()
     client = DatabricksSQLClient(config, token_provider)
@@ -169,10 +166,67 @@ def test_create_temp_table_with_semicolon():
     with pytest.raises(GuardrailError) as exc_info:
         client.create_temp_table(
             temp_table_name="test_table",
-            source_query="SELECT * FROM main.default.customers; DROP TABLE important",
+            source_tables=[],
+            columns=[{"table_alias": "t", "column": "id"}],
         )
     
-    assert "cannot contain statement terminators" in str(exc_info.value)
+    assert "At least one source table is required" in str(exc_info.value)
+
+
+def test_create_temp_table_empty_columns():
+    """Test that empty columns list is rejected."""
+    config = create_test_config()
+    token_provider = MagicMock()
+    client = DatabricksSQLClient(config, token_provider)
+    
+    source_tables = [{"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}]
+    
+    with pytest.raises(GuardrailError) as exc_info:
+        client.create_temp_table(
+            temp_table_name="test_table",
+            source_tables=source_tables,
+            columns=[],
+        )
+    
+    assert "At least one column is required" in str(exc_info.value)
+
+
+def test_create_temp_table_with_semicolon_in_where():
+    """Test that WHERE conditions with semicolons are rejected."""
+    config = create_test_config()
+    token_provider = MagicMock()
+    client = DatabricksSQLClient(config, token_provider)
+    
+    source_tables = [{"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}]
+    columns = [{"table_alias": "c", "column": "id"}]
+    
+    with pytest.raises(GuardrailError) as exc_info:
+        client.create_temp_table(
+            temp_table_name="test_table",
+            source_tables=source_tables,
+            columns=columns,
+            where_conditions="c.id > 1; DROP TABLE important",
+        )
+    
+    assert "cannot contain semicolons" in str(exc_info.value)
+
+
+def test_create_temp_table_non_allowlisted_catalog():
+    """Test that non-allowlisted catalogs are rejected."""
+    config = create_test_config()
+    token_provider = MagicMock()
+    client = DatabricksSQLClient(config, token_provider)
+    
+    source_tables = [{"catalog": "forbidden", "schema": "default", "table": "customers", "alias": "c"}]
+    columns = [{"table_alias": "c", "column": "id"}]
+    
+    from databricks_mcp.errors import ScopeError
+    with pytest.raises(ScopeError):
+        client.create_temp_table(
+            temp_table_name="test_table",
+            source_tables=source_tables,
+            columns=columns,
+        )
 
 
 def test_create_temp_table_creation_failure(mocker):
@@ -193,18 +247,22 @@ def test_create_temp_table_creation_failure(mocker):
     mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
     
+    source_tables = [{"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}]
+    columns = [{"table_alias": "c", "column": "id"}]
+    
     with patch('databricks.sql.connect', return_value=mock_connection):
         with pytest.raises(QueryError) as exc_info:
             client.create_temp_table(
                 temp_table_name="test_table",
-                source_query="SELECT * FROM main.default.customers",
+                source_tables=source_tables,
+                columns=columns,
             )
     
     assert "Failed to create temporary table" in str(exc_info.value)
 
 
-def test_create_temp_table_with_aggregation(mocker):
-    """Test creating global temporary table with aggregated data."""
+def test_create_temp_table_with_column_aliases(mocker):
+    """Test creating temporary table with column aliases."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -221,23 +279,70 @@ def test_create_temp_table_with_aggregation(mocker):
     mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
     
-    source_query = """
-    SELECT 
-        region,
-        COUNT(*) as customer_count,
-        SUM(total_purchases) as total_revenue
-    FROM main.default.customers
-    GROUP BY region
-    HAVING SUM(total_purchases) > 10000
-    """
+    source_tables = [{"catalog": "main", "schema": "default", "table": "customers", "alias": "c"}]
+    columns = [
+        {"table_alias": "c", "column": "customer_id", "alias": "id"},
+        {"table_alias": "c", "column": "total_purchases", "alias": "revenue"}
+    ]
     
     with patch('databricks.sql.connect', return_value=mock_connection):
         result = client.create_temp_table(
-            temp_table_name="regional_summary",
-            source_query=source_query,
+            temp_table_name="renamed_cols",
+            source_tables=source_tables,
+            columns=columns,
             request_id="test-request-3",
         )
     
-    assert result["temp_table_name"] == "global_temp.regional_summary"
+    assert result["temp_table_name"] == "global_temp.renamed_cols"
     assert result["row_count"] == 10
+    assert result["status"] == "created"
+
+
+def test_create_temp_table_with_left_join(mocker):
+    """Test creating temporary table with LEFT JOIN."""
+    config = create_test_config()
+    token_provider = MagicMock()
+    token_provider.get_token.return_value = "test-token"
+    
+    client = DatabricksSQLClient(config, token_provider)
+    
+    mock_cursor = MagicMock()
+    mock_cursor.execute = MagicMock()
+    mock_cursor.fetchall.return_value = [(75,)]
+    
+    mock_connection = MagicMock()
+    mock_connection.__enter__ = MagicMock(return_value=mock_connection)
+    mock_connection.__exit__ = MagicMock(return_value=False)
+    mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    
+    source_tables = [
+        {"catalog": "main", "schema": "default", "table": "customers", "alias": "c"},
+        {"catalog": "main", "schema": "analytics", "table": "preferences", "alias": "p"}
+    ]
+    columns = [
+        {"table_alias": "c", "column": "customer_id"},
+        {"table_alias": "p", "column": "preference_score"}
+    ]
+    join_conditions = [
+        {
+            "type": "LEFT",
+            "left_table": "c",
+            "left_column": "customer_id",
+            "right_table": "p",
+            "right_column": "customer_id"
+        }
+    ]
+    
+    with patch('databricks.sql.connect', return_value=mock_connection):
+        result = client.create_temp_table(
+            temp_table_name="customers_with_prefs",
+            source_tables=source_tables,
+            columns=columns,
+            join_conditions=join_conditions,
+            request_id="test-request-4",
+        )
+    
+    assert result["temp_table_name"] == "global_temp.customers_with_prefs"
+    assert result["row_count"] == 75
     assert result["status"] == "created"

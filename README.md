@@ -309,17 +309,21 @@ python -m databricks_mcp.server
   - `metric_type`: One of COUNT, SUM, AVG, MIN, MAX
   - `metric_column`: Column to aggregate on (use "*" for COUNT)
   - `predicate`: Optional WHERE clause to filter rows before aggregation
-- **`create_temp_table(temp_table_name, source_query)`**: Create a global temporary table from multiple views or data sources for complex lead generation workflows.
+- **`create_temp_table(temp_table_name, source_tables, columns, join_conditions?, where_conditions?)`**: Create a global temporary table from multiple views or data sources using structured parameters (no arbitrary SQL).
   - `temp_table_name`: Name for the temporary table (alphanumeric and underscores only)
-  - `source_query`: SELECT query that combines multiple tables/views with JOINs, filters, and aggregations
-  - Returns metadata about the created table including row count and the full qualified name (global_temp.table_name)
-  - The temporary table uses GLOBAL TEMPORARY VIEW for cross-connection accessibility within the session
+  - `source_tables`: List of tables to combine, each with `catalog`, `schema`, `table`, and `alias`
+  - `columns`: List of columns to include, each with `table_alias`, `column`, and optional `alias` for renaming
+  - `join_conditions` (optional): List of JOIN specifications with `type` (INNER/LEFT/RIGHT/FULL), `left_table`, `left_column`, `right_table`, `right_column`
+  - `where_conditions` (optional): WHERE clause conditions (without the WHERE keyword)
+  - Returns metadata including the full qualified name (global_temp.table_name) and row count
+  - **IMPORTANT**: Temporary table is session-scoped and will be automatically deleted when the Databricks session ends. It cannot be accessed from other AI agent sessions.
   - All referenced tables must be within allowlisted catalogs/schemas
   - Example use case: Combine customer purchase data with engagement metrics to identify high-value leads
 
 ## Guardrails
 - Allowlist enforcement for catalogs and schemas on every tool; anything else is rejected.
 - SELECT-only statements (enforced for aggregation queries).
+- Structured parameters prevent arbitrary SQL injection in `create_temp_table`.
 - Server-side row caps and timeouts always applied.
 - No raw data retrieval; all results are aggregated metrics only.
 
@@ -327,7 +331,7 @@ python -m databricks_mcp.server
 
 1. **Explore**: Use metadata tools to understand table structure and available columns.
 2. **Define Conditions**: Work with the MCP server to build WHERE clause predicates based on business logic.
-3. **Combine Data Sources**: Use `create_temp_table` to join multiple tables/views with different business logics (e.g., combine purchase history with engagement metrics).
+3. **Combine Data Sources**: Use `create_temp_table` to join multiple tables/views with structured parameters (e.g., combine purchase history with engagement metrics).
 4. **Size Audience**: Use `approx_count` and `aggregate_metric` on the temporary table or individual sources to estimate audience size with various conditions.
 5. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
 
@@ -337,29 +341,46 @@ python -m databricks_mcp.server
 # Step 1: Create a global temporary table combining multiple data sources
 result = create_temp_table(
     temp_table_name="qualified_leads",
-    source_query="""
-        SELECT 
-            c.customer_id,
-            c.company_name,
-            c.industry,
-            p.total_purchases,
-            p.avg_order_value,
-            e.engagement_score,
-            e.last_active_date
-        FROM main.sales.customers c
-        JOIN main.sales.purchases_summary p 
-            ON c.customer_id = p.customer_id
-        JOIN main.analytics.engagement_metrics e 
-            ON c.customer_id = e.customer_id
-        WHERE p.total_purchases > 10000
-            AND e.engagement_score > 0.75
-            AND e.last_active_date >= DATE_SUB(CURRENT_DATE(), 90)
-    """
+    source_tables=[
+        {"catalog": "main", "schema": "sales", "table": "customers", "alias": "c"},
+        {"catalog": "main", "schema": "sales", "table": "purchases_summary", "alias": "p"},
+        {"catalog": "main", "schema": "analytics", "table": "engagement_metrics", "alias": "e"}
+    ],
+    columns=[
+        {"table_alias": "c", "column": "customer_id"},
+        {"table_alias": "c", "column": "company_name"},
+        {"table_alias": "c", "column": "industry"},
+        {"table_alias": "p", "column": "total_purchases"},
+        {"table_alias": "p", "column": "avg_order_value", "alias": "avg_value"},
+        {"table_alias": "e", "column": "engagement_score"},
+        {"table_alias": "e", "column": "last_active_date"}
+    ],
+    join_conditions=[
+        {
+            "type": "INNER",
+            "left_table": "c",
+            "left_column": "customer_id",
+            "right_table": "p",
+            "right_column": "customer_id"
+        },
+        {
+            "type": "INNER",
+            "left_table": "c",
+            "left_column": "customer_id",
+            "right_table": "e",
+            "right_column": "customer_id"
+        }
+    ],
+    where_conditions="p.total_purchases > 10000 AND e.engagement_score > 0.75"
 )
-# Returns: {"temp_table_name": "global_temp.qualified_leads", "row_count": 1523, "status": "created"}
+# Returns: {
+#   "temp_table_name": "global_temp.qualified_leads", 
+#   "row_count": 1523, 
+#   "status": "created",
+#   "note": "This temporary table is session-scoped and will be automatically deleted when the Databricks session ends..."
+# }
 
 # Step 2: Use the global temporary table in subsequent queries
-# The table name from the response should be used for queries (global_temp.qualified_leads)
 count_result = approx_count(
     catalog="global_temp",
     schema="",  # Not used for global temp tables
@@ -377,7 +398,7 @@ avg_purchase = aggregate_metric(
 )
 ```
 
-**Note**: Global temporary tables persist across connections within the same Databricks session/cluster. They are accessible via the `global_temp` database and will be automatically cleaned up when the cluster or session terminates.
+**Note**: Global temporary tables are session-scoped and will be **automatically deleted** when the Databricks session terminates. They **cannot** be accessed from other AI agent sessions or persist beyond the current session.
 
 ## Observability
 - Structured logs include request IDs/query IDs; configure log level via `observability.log_level`.

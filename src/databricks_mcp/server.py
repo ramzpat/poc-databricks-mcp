@@ -108,33 +108,64 @@ def build_app(
     @app.tool()
     async def create_temp_table(
         temp_table_name: str,
-        source_query: str,
+        source_tables: list[dict[str, str]],
+        columns: list[dict[str, str]],
+        join_conditions: list[dict[str, str]] | None = None,
+        where_conditions: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a global temporary table from a SELECT query combining multiple views or data sources.
+        Create a global temporary table by combining multiple views or data sources with structured parameters.
         
-        This enables aggregating data from multiple tables/views with different business logics
-        for lead generation purposes. The temporary table uses GLOBAL TEMPORARY VIEW which persists
-        across connections within the same Databricks session, allowing subsequent queries on the combined data.
+        IMPORTANT: Temporary tables are session-scoped and will be automatically deleted when the 
+        Databricks session ends. They CANNOT be accessed from other AI agent sessions or persist beyond 
+        the current session.
+        
+        This tool prevents arbitrary SQL queries by requiring structured parameters. All source tables 
+        must be in allowlisted catalogs/schemas.
         
         Parameters:
         - temp_table_name: Name for the temporary table (alphanumeric and underscores only)
-        - source_query: SELECT query that combines tables/views (all must be in allowlisted catalogs/schemas)
+        - source_tables: List of source tables, each with:
+            * catalog: Catalog name (must be allowlisted)
+            * schema: Schema name (must be allowlisted)  
+            * table: Table or view name
+            * alias: Short alias for the table (e.g., "t1", "customers")
+        - columns: List of columns to include, each with:
+            * table_alias: Alias of the source table
+            * column: Column name from that table
+            * alias (optional): New name for the column in results
+        - join_conditions (optional): List of JOINs, each with:
+            * type: "INNER", "LEFT", "RIGHT", or "FULL" (default: "INNER")
+            * left_table: Alias of left table
+            * left_column: Column from left table
+            * right_table: Alias of right table  
+            * right_column: Column from right table
+        - where_conditions (optional): WHERE clause conditions (without the WHERE keyword)
         
         Example:
-        temp_table_name: "qualified_leads"
-        source_query: "SELECT t1.customer_id, t1.total_purchases, t2.engagement_score 
-                       FROM catalog.schema.purchases t1 
-                       JOIN catalog.schema.engagement t2 ON t1.customer_id = t2.customer_id 
-                       WHERE t1.total_purchases > 1000 AND t2.engagement_score > 0.7"
+        source_tables: [
+            {"catalog": "main", "schema": "sales", "table": "purchases", "alias": "p"},
+            {"catalog": "main", "schema": "analytics", "table": "engagement", "alias": "e"}
+        ]
+        columns: [
+            {"table_alias": "p", "column": "customer_id"},
+            {"table_alias": "p", "column": "total_purchases", "alias": "total_spent"},
+            {"table_alias": "e", "column": "engagement_score"}
+        ]
+        join_conditions: [
+            {"type": "INNER", "left_table": "p", "left_column": "customer_id", 
+             "right_table": "e", "right_column": "customer_id"}
+        ]
+        where_conditions: "p.total_purchases > 1000 AND e.engagement_score > 0.7"
         
-        Returns metadata about the created table including row count and full qualified name (global_temp.table_name).
-        Use the returned table name to query the temporary table in subsequent operations.
+        Returns metadata including temp table name (global_temp.table_name), row count, and a reminder 
+        that the table will be automatically deleted at session end.
         """
         rid = _request_id(request_id)
         return await asyncio.to_thread(
-            sql_client.create_temp_table, temp_table_name, source_query, rid
+            sql_client.create_temp_table, temp_table_name, source_tables, columns, 
+            join_conditions, where_conditions, rid
         )
 
 

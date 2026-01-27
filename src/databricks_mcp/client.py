@@ -293,60 +293,206 @@ class DatabricksSQLClient:
     def create_temp_table(
         self,
         temp_table_name: str,
-        source_query: str,
+        source_tables: list[dict[str, str]],
+        columns: list[dict[str, str]],
+        join_conditions: list[dict[str, str]] | None = None,
+        where_conditions: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a global temporary table from a SELECT query combining multiple views or data sources.
+        Create a global temporary table by combining multiple views or data sources.
 
-        This enables AI agents to aggregate data from multiple tables/views with different 
-        business logics for lead generation purposes. The temporary table uses GLOBAL TEMPORARY VIEW
-        which persists across connections within the same session/cluster.
+        This enables AI agents to aggregate data from multiple tables/views with structured 
+        business logic for lead generation purposes. The temporary table uses GLOBAL TEMPORARY VIEW
+        which is session-scoped and will be automatically deleted when the Databricks session ends.
+        
+        IMPORTANT: Temporary tables created with this tool are NOT persistent. They exist only 
+        within the current Databricks session and will be automatically deleted when the session 
+        terminates. They cannot be accessed from other AI agent sessions.
 
         Parameters:
-        temp_table_name (str): Name for the temporary table
-        source_query (str): SELECT query that combines multiple tables/views. 
-                          All referenced tables must be within allowlisted catalogs/schemas.
+        temp_table_name (str): Name for the temporary table (alphanumeric and underscores only)
+        source_tables (list[dict]): List of source tables, each with:
+            - catalog (str): Catalog name (must be allowlisted)
+            - schema (str): Schema name (must be allowlisted)
+            - table (str): Table or view name
+            - alias (str): Alias to use in the query (e.g., "t1", "customers")
+        columns (list[dict]): List of columns to include, each with:
+            - table_alias (str): Alias of the source table
+            - column (str): Column name from that table
+            - alias (str, optional): Alias for the column in the result (if renaming)
+        join_conditions (list[dict], optional): List of JOIN specifications, each with:
+            - type (str): Join type - "INNER", "LEFT", "RIGHT", or "FULL" (default: "INNER")
+            - left_table (str): Alias of the left table
+            - left_column (str): Column from left table
+            - right_table (str): Alias of the right table
+            - right_column (str): Column from right table
+        where_conditions (str, optional): WHERE clause conditions (without the WHERE keyword)
         request_id (str | None): Request tracking ID
 
         Returns:
         dict[str, Any]: Metadata about the created temporary table including row count
 
         Raises:
-        GuardrailError: If temp_table_name is invalid or query is not a SELECT
+        GuardrailError: If parameters are invalid or tables not in allowlist
         QueryError: If table creation fails
 
         Example:
-        source_query = '''
-        SELECT 
-            t1.customer_id,
-            t1.total_purchases,
-            t2.engagement_score
-        FROM catalog.schema.purchases t1
-        JOIN catalog.schema.engagement t2 
-            ON t1.customer_id = t2.customer_id
-        WHERE t1.total_purchases > 1000 
-            AND t2.engagement_score > 0.7
-        '''
+        source_tables = [
+            {"catalog": "main", "schema": "sales", "table": "purchases", "alias": "p"},
+            {"catalog": "main", "schema": "analytics", "table": "engagement", "alias": "e"}
+        ]
+        columns = [
+            {"table_alias": "p", "column": "customer_id"},
+            {"table_alias": "p", "column": "total_purchases", "alias": "total_spent"},
+            {"table_alias": "e", "column": "engagement_score"}
+        ]
+        join_conditions = [
+            {
+                "type": "INNER",
+                "left_table": "p",
+                "left_column": "customer_id",
+                "right_table": "e",
+                "right_column": "customer_id"
+            }
+        ]
+        where_conditions = "p.total_purchases > 1000 AND e.engagement_score > 0.7"
         """
         # Validate temp table name
         safe_temp_table = sanitize_identifier(temp_table_name, "temp_table_name")
         
-        # Validate source query is SELECT
-        statement_type = detect_statement_type(source_query)
-        if statement_type != "SELECT":
-            raise GuardrailError(
-                f"source_query must be a SELECT statement, got: {statement_type}"
-            )
+        # Validate source tables and check allowlist
+        if not source_tables or len(source_tables) == 0:
+            raise GuardrailError("At least one source table is required")
         
-        # Check for potential SQL injection (statement terminators)
-        if ";" in source_query:
-            raise GuardrailError(
-                "source_query cannot contain statement terminators (semicolons)"
-            )
+        validated_tables = []
+        for idx, table_spec in enumerate(source_tables):
+            if not isinstance(table_spec, dict):
+                raise GuardrailError(f"source_tables[{idx}] must be a dictionary")
+            
+            catalog = table_spec.get("catalog", "")
+            schema = table_spec.get("schema", "")
+            table = table_spec.get("table", "")
+            alias = table_spec.get("alias", "")
+            
+            if not catalog or not schema or not table or not alias:
+                raise GuardrailError(
+                    f"source_tables[{idx}] must have 'catalog', 'schema', 'table', and 'alias'"
+                )
+            
+            # Check allowlist
+            ensure_catalog_allowed(catalog, self._config.scopes)
+            ensure_schema_allowed(catalog, schema, self._config.scopes)
+            
+            # Sanitize identifiers
+            safe_catalog = sanitize_identifier(catalog, "catalog")
+            safe_schema = sanitize_identifier(schema, "schema")
+            safe_table = sanitize_identifier(table, "table")
+            safe_alias = sanitize_identifier(alias, "alias")
+            
+            validated_tables.append({
+                "catalog": safe_catalog,
+                "schema": safe_schema,
+                "table": safe_table,
+                "alias": safe_alias,
+            })
+        
+        # Validate and build column list
+        if not columns or len(columns) == 0:
+            raise GuardrailError("At least one column is required")
+        
+        column_parts = []
+        for idx, col_spec in enumerate(columns):
+            if not isinstance(col_spec, dict):
+                raise GuardrailError(f"columns[{idx}] must be a dictionary")
+            
+            table_alias = col_spec.get("table_alias", "")
+            column = col_spec.get("column", "")
+            col_alias = col_spec.get("alias")
+            
+            if not table_alias or not column:
+                raise GuardrailError(
+                    f"columns[{idx}] must have 'table_alias' and 'column'"
+                )
+            
+            # Sanitize identifiers
+            safe_table_alias = sanitize_identifier(table_alias, "table_alias")
+            safe_column = sanitize_identifier(column, "column")
+            
+            if col_alias:
+                safe_col_alias = sanitize_identifier(col_alias, "column_alias")
+                column_parts.append(f"`{safe_table_alias}`.`{safe_column}` AS `{safe_col_alias}`")
+            else:
+                column_parts.append(f"`{safe_table_alias}`.`{safe_column}`")
+        
+        # Build FROM clause with first table
+        first_table = validated_tables[0]
+        from_clause = (
+            f"FROM `{first_table['catalog']}`.`{first_table['schema']}`.`{first_table['table']}` AS `{first_table['alias']}`"
+        )
+        
+        # Build JOIN clauses
+        join_clause = ""
+        if join_conditions and len(join_conditions) > 0:
+            join_parts = []
+            for idx, join_spec in enumerate(join_conditions):
+                if not isinstance(join_spec, dict):
+                    raise GuardrailError(f"join_conditions[{idx}] must be a dictionary")
+                
+                join_type = join_spec.get("type", "INNER").upper()
+                left_table = join_spec.get("left_table", "")
+                left_column = join_spec.get("left_column", "")
+                right_table = join_spec.get("right_table", "")
+                right_column = join_spec.get("right_column", "")
+                
+                if not left_table or not left_column or not right_table or not right_column:
+                    raise GuardrailError(
+                        f"join_conditions[{idx}] must have 'left_table', 'left_column', 'right_table', and 'right_column'"
+                    )
+                
+                if join_type not in {"INNER", "LEFT", "RIGHT", "FULL"}:
+                    raise GuardrailError(
+                        f"join_conditions[{idx}] type must be INNER, LEFT, RIGHT, or FULL"
+                    )
+                
+                # Sanitize identifiers
+                safe_left_table = sanitize_identifier(left_table, "left_table")
+                safe_left_column = sanitize_identifier(left_column, "left_column")
+                safe_right_table = sanitize_identifier(right_table, "right_table")
+                safe_right_column = sanitize_identifier(right_column, "right_column")
+                
+                # Find the right table in validated_tables to get its full name
+                right_table_spec = None
+                for t in validated_tables:
+                    if t["alias"] == safe_right_table:
+                        right_table_spec = t
+                        break
+                
+                if not right_table_spec:
+                    raise GuardrailError(
+                        f"join_conditions[{idx}] references unknown table alias '{right_table}'"
+                    )
+                
+                join_parts.append(
+                    f"{join_type} JOIN `{right_table_spec['catalog']}`.`{right_table_spec['schema']}`.`{right_table_spec['table']}` AS `{safe_right_table}` "
+                    f"ON `{safe_left_table}`.`{safe_left_column}` = `{safe_right_table}`.`{safe_right_column}`"
+                )
+            
+            join_clause = " ".join(join_parts)
+        
+        # Build WHERE clause
+        where_clause = ""
+        if where_conditions:
+            # Simple validation - no semicolons allowed
+            if ";" in where_conditions:
+                raise GuardrailError("where_conditions cannot contain semicolons")
+            where_clause = f"WHERE {where_conditions}"
+        
+        # Build complete SELECT query
+        select_clause = f"SELECT {', '.join(column_parts)}"
+        source_query = f"{select_clause} {from_clause} {join_clause} {where_clause}".strip()
         
         # Create global temporary table using CREATE GLOBAL TEMPORARY VIEW
-        # Use global_temp database prefix for cross-connection accessibility
         create_sql = f"CREATE OR REPLACE GLOBAL TEMPORARY VIEW global_temp.`{safe_temp_table}` AS {source_query}"
         
         timeout_value = effective_timeout(None, self._config.limits)
@@ -402,6 +548,7 @@ class DatabricksSQLClient:
             "temp_table_name": f"global_temp.{safe_temp_table}",
             "row_count": row_count,
             "status": "created",
+            "note": "This temporary table is session-scoped and will be automatically deleted when the Databricks session ends. It cannot be accessed from other sessions.",
         }
 
     def _execute(
