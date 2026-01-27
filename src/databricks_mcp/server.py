@@ -105,6 +105,18 @@ def build_app(
             sql_client.aggregate_metric, catalog, schema, table, metric_type, metric_column, predicate, rid
         )
 
+    @app.tool()
+    async def create_temp_table(
+        temp_table_name: str,
+        sql_query: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a session-scoped temporary view from a SELECT query that can join/aggregate multiple tables for lead generation analysis."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(
+            sql_client.create_temp_table, temp_table_name, sql_query, rid
+        )
+
 
     return app
 

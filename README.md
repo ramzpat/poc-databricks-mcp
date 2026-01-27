@@ -78,6 +78,7 @@ limits:
   max_concurrent_queries: 5
   allow_statement_types:
     - SELECT
+    - CREATE  # Required for create_temp_table tool
 observability:
   log_level: info
   propagate_request_ids: true
@@ -309,6 +310,13 @@ python -m databricks_mcp.server
   - `metric_type`: One of COUNT, SUM, AVG, MIN, MAX
   - `metric_column`: Column to aggregate on (use "*" for COUNT)
   - `predicate`: Optional WHERE clause to filter rows before aggregation
+- **`create_temp_table(temp_table_name, sql_query, request_id?)`**: Create session-scoped temporary views from SELECT queries that can JOIN/aggregate multiple tables for lead generation analysis.
+  - `temp_table_name`: Valid SQL identifier for the temporary view
+  - `sql_query`: SELECT query (can include JOINs, aggregations, WHERE clauses)
+  - All referenced catalogs/schemas must be in allowlist
+  - Query must be SELECT only (no INSERT, UPDATE, DELETE, etc.)
+  - Temporary views are automatically cleaned up at session end
+  - See [CREATE_TEMP_TABLE_GUIDE.md](CREATE_TEMP_TABLE_GUIDE.md) for detailed usage examples
 
 ## Guardrails
 - Allowlist enforcement for catalogs and schemas on every tool; anything else is rejected.
@@ -321,7 +329,8 @@ python -m databricks_mcp.server
 1. **Explore**: Use metadata tools to understand table structure and available columns.
 2. **Define Conditions**: Work with the MCP server to build WHERE clause predicates based on business logic.
 3. **Size Audience**: Use `approx_count` and `aggregate_metric` to estimate audience size with various conditions.
-4. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
+4. **Create Complex Views**: Use `create_temp_table` to combine data from multiple tables using JOINs and aggregations, creating reusable session-scoped views for lead analysis.
+5. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
 
 ## Observability
 - Structured logs include request IDs/query IDs; configure log level via `observability.log_level`.
