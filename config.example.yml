@@ -1,4 +1,11 @@
-# Example MCP server configuration for Databricks (OAuth-only shared service principal)
+# Example MCP server configuration for Databricks Lead Generation
+# This configuration enables audience sizing and lead generation via aggregated metrics only.
+# No raw data is returned; all results are aggregated values (COUNT, SUM, AVG, MIN, MAX).
+#
+# Available tools:
+# - Metadata: list_catalogs, list_schemas, list_tables, table_metadata, partition_info
+# - Aggregation: approx_count (row count), aggregate_metric (COUNT, SUM, AVG, MIN, MAX)
+#
 warehouse:
   host: ${DATABRICKS_HOST}
   http_path: ${DATABRICKS_HTTP_PATH}

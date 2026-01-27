@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "databricks-mcp"
 version = "0.1.0"
-description = "Databricks MCP server POC"
+description = "Databricks MCP server for lead generation and audience sizing"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

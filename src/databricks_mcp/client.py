@@ -176,116 +176,119 @@ class DatabricksSQLClient:
             },
         }
 
-    def sample_data(
+    def approx_count(
         self,
         catalog: str,
         schema: str,
         table: str,
-        limit: int | None,
         predicate: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
         """
-        Retrieve sample data from a table with optional filtering.
+        Get approximate row count for a table with optional filtering.
 
-        Applies LIMIT at the SQL level for efficient handling of large datasets.
+        Does not return any actual data, only aggregated count for audience sizing.
+        Useful for lead generation to estimate audience based on conditions.
 
         Parameters:
         catalog (str): The catalog name
         schema (str): The schema name
         table (str): The table name
-        limit (int | None): Maximum number of rows to return
-        predicate (str | None): Optional WHERE clause predicate
+        predicate (str | None): Optional WHERE clause predicate for filtering
         request_id (str | None): Request tracking ID
 
         Returns:
-        dict[str, Any]: Contains rows, truncated flag, and limit_applied
+        dict[str, Any]: Catalog, schema, table, approximate count, and conditions applied
 
         Raises:
-        GuardrailError: If effective_limit is 0 or less
+        GuardrailError: If guardrails fail
         """
         ensure_catalog_allowed(catalog, self._config.scopes)
         ensure_schema_allowed(catalog, schema, self._config.scopes)
         safe_table = sanitize_identifier(table, "table")
-        cap = self._config.limits.sample_max_rows
-        effective_limit = clamp_limit(limit, cap)
-        if effective_limit == 0:
-            raise GuardrailError("Sample limit must be > 0")
 
         predicate_clause = f" WHERE {predicate}" if predicate else ""
-        sql = f"SELECT * FROM `{catalog}`.`{schema}`.`{safe_table}`{predicate_clause} LIMIT {effective_limit}"
+        sql = f"SELECT COUNT(*) as approx_count FROM `{catalog}`.`{schema}`.`{safe_table}`{predicate_clause}"
         timeout_value = effective_timeout(None, self._config.limits)
-        rows, truncated = self._execute(
+        rows, _ = self._execute(
             sql,
             params=None,
-            limit=effective_limit,
+            limit=None,
             timeout=timeout_value,
             request_id=request_id,
         )
+        count = rows[0].get("approx_count", 0) if rows else 0
         return {
             "catalog": catalog,
             "schema": schema,
             "table": table,
-            "rows": rows,
-            "truncated": truncated,
-            "limit_applied": effective_limit,
+            "approx_count": count,
+            "predicate": predicate,
         }
 
-    def preview_query(
+    def aggregate_metric(
         self,
-        sql: str,
-        limit: int | None = None,
-        timeout_seconds: int | None = None,
+        catalog: str,
+        schema: str,
+        table: str,
+        metric_type: str,
+        metric_column: str,
+        predicate: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        ensure_statement_allowed(
-            detect_statement_type(sql), self._config.limits.allow_statement_types
-        )
-        cap = (
-            self._config.limits.sample_max_rows
-            if self._config.limits.sample_max_rows != -1
-            else None
-        )
-        effective_limit = clamp_limit(
-            limit, cap if cap is not None else self._config.limits.max_rows
-        )
-        timeout_value = effective_timeout(timeout_seconds, self._config.limits)
-        wrapped_sql = self._wrap_with_limit(sql, effective_limit)
-        rows, truncated = self._execute(
-            wrapped_sql,
+        """
+        Calculate aggregated metric on a table without returning individual rows.
+
+        Supports COUNT, SUM, AVG, MIN, MAX aggregations for audience sizing.
+        Does not return any actual data, only the aggregated result.
+
+        Parameters:
+        catalog (str): The catalog name
+        schema (str): The schema name
+        table (str): The table name
+        metric_type (str): One of COUNT, SUM, AVG, MIN, MAX
+        metric_column (str): Column name to aggregate (for COUNT, can be "*")
+        predicate (str | None): Optional WHERE clause predicate for filtering
+        request_id (str | None): Request tracking ID
+
+        Returns:
+        dict[str, Any]: Aggregated metric result
+
+        Raises:
+        GuardrailError: If metric_type or column is invalid
+        """
+        ensure_catalog_allowed(catalog, self._config.scopes)
+        ensure_schema_allowed(catalog, schema, self._config.scopes)
+        safe_table = sanitize_identifier(table, "table")
+        safe_column = sanitize_identifier(metric_column, "column")
+        
+        metric_type_upper = metric_type.upper()
+        valid_metrics = {"COUNT", "SUM", "AVG", "MIN", "MAX"}
+        if metric_type_upper not in valid_metrics:
+            raise GuardrailError(
+                f"Invalid metric_type '{metric_type}'. Must be one of: {', '.join(valid_metrics)}"
+            )
+
+        predicate_clause = f" WHERE {predicate}" if predicate else ""
+        sql = f"SELECT {metric_type_upper}({safe_column}) as metric_value FROM `{catalog}`.`{schema}`.`{safe_table}`{predicate_clause}"
+        timeout_value = effective_timeout(None, self._config.limits)
+        rows, _ = self._execute(
+            sql,
             params=None,
-            limit=effective_limit,
+            limit=None,
             timeout=timeout_value,
             request_id=request_id,
         )
-        return {"rows": rows, "truncated": truncated, "limit_applied": effective_limit}
-
-    def run_query(
-        self,
-        sql: str,
-        limit: int | None = None,
-        timeout_seconds: int | None = None,
-        request_id: str | None = None,
-    ) -> dict[str, Any]:
-        ensure_statement_allowed(
-            detect_statement_type(sql), self._config.limits.allow_statement_types
-        )
-        effective_limit = clamp_limit(limit, self._config.limits.max_rows)
-        timeout_value = effective_timeout(timeout_seconds, self._config.limits)
-        wrapped_sql = self._wrap_with_limit(sql, effective_limit)
-        rows, truncated = self._execute(
-            wrapped_sql,
-            params=None,
-            limit=effective_limit,
-            timeout=timeout_value,
-            request_id=request_id,
-        )
-        return {"rows": rows, "truncated": truncated, "limit_applied": effective_limit}
-
-    def _wrap_with_limit(self, sql: str, limit: int | None) -> str:
-        if limit is None or limit == -1:
-            return sql
-        return f"SELECT * FROM ({sql}) AS subquery LIMIT {limit}"
+        metric_value = rows[0].get("metric_value") if rows else None
+        return {
+            "catalog": catalog,
+            "schema": schema,
+            "table": table,
+            "metric_type": metric_type_upper,
+            "metric_column": metric_column,
+            "metric_value": metric_value,
+            "predicate": predicate,
+        }
 
     def _execute(
         self,
@@ -299,12 +302,13 @@ class DatabricksSQLClient:
         Execute SQL query and return results as list of dictionaries.
 
         Assumes LIMIT is already applied in the SQL query for large datasets.
+        Timeout is enforced at session level (30s default); per-query timeout not supported by Databricks.
 
         Parameters:
         sql (str): SQL query to execute
         params (Iterable[Any] | None): Query parameters for parameterized queries
         limit (int | None): Expected row limit (for logging and validation)
-        timeout (int | None): Query timeout in seconds
+        timeout (int | None): Deprecated; Databricks enforces session-level timeout instead
         request_id (str | None): Request tracking ID
 
         Returns:
@@ -327,15 +331,13 @@ class DatabricksSQLClient:
                     server_hostname=self._config.warehouse.host,
                     http_path=self._config.warehouse.http_path,
                     access_token=access_token,
-                    session_configuration={"ansi_mode": "true"},
+                    session_configuration={
+                        "ansi_mode": "true",
+                        "statement_timeout": "30s",
+                    },
                 ) as connection:
                     with connection.cursor() as cursor:
-                        try:
-                            cursor.execute(sql, params, timeout=timeout)
-                        except TypeError as exc:
-                            if "timeout" not in str(exc):
-                                raise
-                            cursor.execute(sql, params)
+                        cursor.execute(sql, params)
                         rows_raw = cursor.fetchall()
                         description = cursor.description or []
             except DatabricksError as exc:

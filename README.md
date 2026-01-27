@@ -1,5 +1,5 @@
 ---
-post_title: POC - Databricks MCP
+post_title: POC - Databricks MCP Lead Generation
 author1: GitHub Copilot
 post_slug: poc-databricks-mcp
 microsoft_alias: na
@@ -9,19 +9,29 @@ categories:
 tags:
 	- databricks
 	- mcp
-	- configuration
+	- lead-generation
+	- audience-sizing
 ai_note: Generated with AI assistance
-summary: Overview and configuration guide for the Databricks MCP server.
-post_date: 2026-01-23
+summary: Lead generation MCP server for audience sizing with aggregated metrics from Databricks.
+post_date: 2026-01-27
 ---
 
-## POC - Databricks MCP
+## POC - Databricks MCP (Lead Generation Edition)
+
+An MCP server that enables lead generation and audience sizing by providing approximate counts and aggregated metrics from Databricks, while preserving metadata checking capabilities for data governance.
+
+### Key Features
+- **Privacy-First Design**: No raw data is exposed; only aggregated metrics (COUNT, SUM, AVG, MIN, MAX)
+- **Lead Audience Sizing**: Estimate audience size based on business logic conditions
+- **Metadata Discovery**: Full access to table structure, columns, and partition information
+- **Governed Access**: Allowlist-based catalog/schema access with guardrails
+- **Condition-to-Notebook Pipeline**: Export conditions to generate Jupyter notebooks for internal DS team
 
 ## Quick start
 - Install: `pip install -e .`
 - Copy `config.example.yml` to `config.yml` and fill in warehouse + allowlists; inject secrets via env (no secrets in files).
 - Run: `DATABRICKS_MCP_CONFIG=config.yml python -m databricks_mcp.server`
-- Tools expose metadata discovery, sampling, and governed query execution over an allowlisted catalog/schema set.
+- Tools expose metadata discovery and privacy-safe aggregated metrics over an allowlisted catalog/schema set.
 
 ## Remote Usage with Claude Desktop or Other MCP Clients
 
@@ -285,20 +295,33 @@ python -m databricks_mcp.server
 - Secrets: always use `${ENV_VAR}` references in YAML; never hard-code tokens.
 
 ## Tools
-- `list_catalogs`, `list_schemas(catalog)`: return only allowlisted scopes.
-- `list_tables(catalog, schema)`: tables/views from information schema within allowed scopes.
-- `table_metadata(catalog, schema, table)`: columns, primary keys, partition columns, and row counts when available.
-- `partition_info(catalog, schema, table)`: partition columns plus lightweight stats (row count, size).
-- `sample_data(catalog, schema, table, limit?, predicate?)`: capped sample enforced server-side.
-- `preview_query(sql, limit?, timeout_seconds?)`: SELECT-only quick check with strict row/time cap.
-- `run_query(sql, limit?, timeout_seconds?)`: governed SELECT with row/time caps and optional unlimited rows when config explicitly uses `-1`.
-- `health_check()`: liveness without contacting Databricks.
+
+### Metadata Discovery (No Data Exposure)
+- **`list_catalogs`**: Return only allowlisted catalogs.
+- **`list_schemas(catalog)`**: List all schemas within an allowed catalog.
+- **`list_tables(catalog, schema)`**: Tables/views from information schema within allowed scopes.
+- **`table_metadata(catalog, schema, table)`**: Columns, data types, primary keys, partition columns, and approximate row counts.
+- **`partition_info(catalog, schema, table)`**: Partition columns plus lightweight statistics (row count, size).
+
+### Lead Generation & Audience Sizing (Aggregated Only)
+- **`approx_count(catalog, schema, table, predicate?)`**: Approximate row count for audience sizing with optional WHERE clause filtering. No raw data returned.
+- **`aggregate_metric(catalog, schema, table, metric_type, metric_column, predicate?)`**: Calculate aggregated metrics (COUNT, SUM, AVG, MIN, MAX) without returning individual rows.
+  - `metric_type`: One of COUNT, SUM, AVG, MIN, MAX
+  - `metric_column`: Column to aggregate on (use "*" for COUNT)
+  - `predicate`: Optional WHERE clause to filter rows before aggregation
 
 ## Guardrails
 - Allowlist enforcement for catalogs and schemas on every tool; anything else is rejected.
-- SELECT-only by default; other statement types require explicit `allow_statement_types` in config.
-- Server-side row caps, timeouts, and concurrency limits always applied (client requests cannot override).
-- Truncation is indicated in results when limits cut output.
+- SELECT-only statements (enforced for aggregation queries).
+- Server-side row caps and timeouts always applied.
+- No raw data retrieval; all results are aggregated metrics only.
+
+## Use Case: Lead Generation Workflow
+
+1. **Explore**: Use metadata tools to understand table structure and available columns.
+2. **Define Conditions**: Work with the MCP server to build WHERE clause predicates based on business logic.
+3. **Size Audience**: Use `approx_count` and `aggregate_metric` to estimate audience size with various conditions.
+4. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
 
 ## Observability
 - Structured logs include request IDs/query IDs; configure log level via `observability.log_level`.
@@ -307,3 +330,16 @@ python -m databricks_mcp.server
 ## Testing
 - Install dev deps: `pip install -e .[test]`
 - Run unit tests: `pytest`
+
+## Migration from Data-Retrieval Version
+
+If you were using the previous version that supported `sample_data`, `preview_query`, and `run_query` (which returned raw data), note these changes:
+
+- **Removed**: `sample_data`, `preview_query`, `run_query` - all raw data retrieval tools
+- **Removed**: Job execution tools (`submit_python_job`, `submit_notebook_job`, etc.)
+- **Removed**: `jobs.py` module entirely
+- **Added**: `approx_count` - get audience size without data
+- **Added**: `aggregate_metric` - calculate metrics (COUNT, SUM, AVG, MIN, MAX) for audience analysis
+- **Retained**: All metadata tools for schema exploration
+
+The new version prioritizes **privacy** and **audience sizing** for lead generation use cases over raw data access.
