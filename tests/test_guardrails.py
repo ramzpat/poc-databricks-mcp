@@ -24,13 +24,6 @@ def test_clamp_limit() -> None:
     assert clamp_limit(5, -1) == 5
 
 
-def test_ensure_catalog_allowed_global_temp() -> None:
-    """Test that global_temp catalog is always allowed."""
-    scopes = ScopeConfig(catalogs={"main": ["default"]})
-    # Should not raise for global_temp
-    ensure_catalog_allowed("global_temp", scopes)
-
-
 def test_ensure_catalog_allowed_regular() -> None:
     """Test that regular catalogs must be in allowlist."""
     scopes = ScopeConfig(catalogs={"main": ["default"]})
@@ -40,10 +33,3 @@ def test_ensure_catalog_allowed_regular() -> None:
     with pytest.raises(ScopeError):
         ensure_catalog_allowed("forbidden", scopes)
 
-
-def test_ensure_schema_allowed_global_temp() -> None:
-    """Test that global_temp catalog doesn't require schema validation."""
-    scopes = ScopeConfig(catalogs={"main": ["default"]})
-    # Should not raise for any schema with global_temp
-    ensure_schema_allowed("global_temp", "", scopes)
-    ensure_schema_allowed("global_temp", "anything", scopes)

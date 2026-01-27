@@ -76,7 +76,7 @@ def test_create_temp_table_success(mocker):
             request_id="test-request-1",
         )
     
-    assert result["temp_table_name"] == "global_temp.qualified_leads"
+    assert result["temp_table_name"] == "qualified_leads"
     assert result["row_count"] == 100
     assert result["status"] == "created"
     assert "session-scoped" in result["note"]
@@ -84,12 +84,12 @@ def test_create_temp_table_success(mocker):
     # Verify CREATE GLOBAL TEMPORARY VIEW was called
     assert mock_cursor.execute.call_count == 2
     create_call = mock_cursor.execute.call_args_list[0]
-    assert "CREATE OR REPLACE GLOBAL TEMPORARY VIEW" in create_call[0][0]
-    assert "global_temp.`qualified_leads`" in create_call[0][0]
+    assert "CREATE OR REPLACE TEMPORARY TABLE" in create_call[0][0]
+    assert "`qualified_leads`" in create_call[0][0]
 
 
 def test_create_temp_table_with_join(mocker):
-    """Test creating global temporary view with JOIN from multiple sources."""
+    """Test creating temporary table with JOIN from multiple sources."""
     config = create_test_config()
     token_provider = MagicMock()
     token_provider.get_token.return_value = "test-token"
@@ -135,7 +135,7 @@ def test_create_temp_table_with_join(mocker):
             request_id="test-request-2",
         )
     
-    assert result["temp_table_name"] == "global_temp.high_value_leads"
+    assert result["temp_table_name"] == "high_value_leads"
     assert result["row_count"] == 50
     assert result["status"] == "created"
 
@@ -258,7 +258,7 @@ def test_create_temp_table_creation_failure(mocker):
                 columns=columns,
             )
     
-    assert "Failed to create temporary view" in str(exc_info.value)
+    assert "Failed to create temporary table" in str(exc_info.value)
 
 
 def test_create_temp_table_with_column_aliases(mocker):
@@ -293,7 +293,7 @@ def test_create_temp_table_with_column_aliases(mocker):
             request_id="test-request-3",
         )
     
-    assert result["temp_table_name"] == "global_temp.renamed_cols"
+    assert result["temp_table_name"] == "renamed_cols"
     assert result["row_count"] == 10
     assert result["status"] == "created"
 
@@ -343,6 +343,6 @@ def test_create_temp_table_with_left_join(mocker):
             request_id="test-request-4",
         )
     
-    assert result["temp_table_name"] == "global_temp.customers_with_prefs"
+    assert result["temp_table_name"] == "customers_with_prefs"
     assert result["row_count"] == 75
     assert result["status"] == "created"
