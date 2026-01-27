@@ -333,7 +333,6 @@ class DatabricksSQLClient:
                     access_token=access_token,
                     session_configuration={
                         "ansi_mode": "true",
-                        "statement_timeout": "30s",
                     },
                 ) as connection:
                     with connection.cursor() as cursor:
