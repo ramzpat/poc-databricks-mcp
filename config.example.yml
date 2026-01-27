@@ -5,6 +5,7 @@
 # Available tools:
 # - Metadata: list_catalogs, list_schemas, list_tables, table_metadata, partition_info
 # - Aggregation: approx_count (row count), aggregate_metric (COUNT, SUM, AVG, MIN, MAX)
+# - Temp Tables: create_temp_table (create session-scoped views from SELECT queries with JOINs/aggregations)
 #
 warehouse:
   host: ${DATABRICKS_HOST}
@@ -28,6 +29,7 @@ limits:
   max_concurrent_queries: 5
   allow_statement_types:
     - SELECT
+    - CREATE  # Required for create_temp_table tool to work
 observability:
   log_level: info
   propagate_request_ids: true

@@ -55,3 +55,61 @@ def effective_timeout(requested: int | None, config: LimitsConfig) -> int | None
     if config.query_timeout_seconds == -1:
         return requested
     return min(requested, config.query_timeout_seconds)
+
+
+def validate_temp_table_query(sql: str, scopes: ScopeConfig) -> None:
+    """
+    Validate a SQL query intended for temporary table creation.
+    
+    Ensures:
+    - Query is a SELECT statement (reads only, no writes)
+    - All referenced catalogs and schemas are in allowlist
+    - No obvious attempts to bypass guardrails
+    
+    Parameters:
+    sql (str): SQL query to validate
+    scopes (ScopeConfig): Configured catalog/schema allowlist
+    
+    Raises:
+    GuardrailError: If validation fails
+    """
+    # Remove leading/trailing whitespace and normalize
+    normalized = sql.strip()
+    
+    # Ensure it's a SELECT statement
+    if not normalized.upper().startswith("SELECT"):
+        raise GuardrailError(
+            "Temporary table query must be a SELECT statement for privacy-first design"
+        )
+    
+    # Check for forbidden keywords that might bypass guardrails
+    forbidden_patterns = [
+        r'\bINTO\s+OUTFILE\b',
+        r'\bINTO\s+DUMPFILE\b',
+        r'\bLOAD_FILE\b',
+        r'\bEXEC\b',
+        r'\bEXECUTE\b',
+        r'\bCALL\b',
+    ]
+    
+    normalized_upper = normalized.upper()
+    for pattern in forbidden_patterns:
+        if re.search(pattern, normalized_upper, re.IGNORECASE):
+            raise GuardrailError(f"Query contains forbidden pattern: {pattern}")
+    
+    # Extract catalog references using backticks (Databricks style: `catalog`.`schema`.`table`)
+    # Pattern matches: `catalog`.`schema`.`table` or catalog.schema.table
+    catalog_pattern = r'`?(\w+)`?\.`?(\w+)`?\.`?\w+`?'
+    matches = re.findall(catalog_pattern, normalized)
+    
+    # Validate all referenced catalogs and schemas are in allowlist
+    for catalog, schema in matches:
+        if catalog not in scopes.catalogs:
+            raise GuardrailError(
+                f"Query references catalog '{catalog}' which is not in allowlist"
+            )
+        allowed_schemas = scopes.catalogs.get(catalog, [])
+        if schema not in allowed_schemas:
+            raise GuardrailError(
+                f"Query references schema '{schema}' in catalog '{catalog}' which is not in allowlist"
+            )

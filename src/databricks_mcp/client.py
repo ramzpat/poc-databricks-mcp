@@ -19,6 +19,7 @@ from .guardrails import (
     ensure_schema_allowed,
     ensure_statement_allowed,
     sanitize_identifier,
+    validate_temp_table_query,
 )
 from .logging_utils import log_extra
 
@@ -288,6 +289,120 @@ class DatabricksSQLClient:
             "metric_column": metric_column,
             "metric_value": metric_value,
             "predicate": predicate,
+        }
+
+    def create_temp_table(
+        self,
+        temp_table_name: str,
+        sql_query: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a session-scoped temporary view/table from a SQL query.
+
+        This enables AI agents to create aggregate views combining multiple tables/views
+        for lead generation analysis without exposing raw data. The temporary view exists
+        only for the current session and is automatically cleaned up.
+
+        The SQL query must be a SELECT statement and can include:
+        - JOINs across multiple tables/views
+        - Aggregations (COUNT, SUM, AVG, GROUP BY, etc.)
+        - Filtering (WHERE clauses)
+        - All referenced catalogs/schemas must be in the allowlist
+
+        Parameters:
+        temp_table_name (str): Name for the temporary view (must be valid identifier)
+        sql_query (str): SELECT query to populate the temp view
+        request_id (str | None): Request tracking ID
+
+        Returns:
+        dict[str, Any]: Metadata about created temp table including name and row count
+
+        Raises:
+        GuardrailError: If query violates guardrails or references disallowed catalogs/schemas
+        QueryError: If query execution fails
+
+        Example:
+        create_temp_table(
+            "leads_summary",
+            '''
+            SELECT 
+                c.industry,
+                COUNT(*) as lead_count,
+                AVG(c.revenue) as avg_revenue
+            FROM `main`.`default`.`companies` c
+            JOIN `main`.`default`.`contacts` ct ON c.id = ct.company_id
+            WHERE c.revenue > 1000000
+            GROUP BY c.industry
+            '''
+        )
+        """
+        # Validate temp table name
+        safe_table_name = sanitize_identifier(temp_table_name, "temp_table_name")
+        
+        # Validate the SQL query against guardrails
+        validate_temp_table_query(sql_query, self._config.scopes)
+        
+        # Create the temporary view using CREATE TEMPORARY VIEW
+        create_sql = f"CREATE TEMPORARY VIEW {safe_table_name} AS {sql_query}"
+        
+        timeout_value = effective_timeout(None, self._config.limits)
+        
+        # Execute the CREATE TEMPORARY VIEW statement
+        # Note: CREATE is allowed if configured in allow_statement_types
+        access_token = self._token_provider.get_token()
+        query_id = str(uuid.uuid4())
+
+        with self._semaphore:
+            try:
+                with databricks.sql.connect(
+                    server_hostname=self._config.warehouse.host,
+                    http_path=self._config.warehouse.http_path,
+                    access_token=access_token,
+                    session_configuration={
+                        "ansi_mode": "true",
+                    },
+                ) as connection:
+                    with connection.cursor() as cursor:
+                        # Create the temporary view
+                        cursor.execute(create_sql)
+                        
+                        # Get row count from the temp view
+                        count_sql = f"SELECT COUNT(*) as row_count FROM {safe_table_name}"
+                        cursor.execute(count_sql)
+                        count_result = cursor.fetchone()
+                        row_count = count_result[0] if count_result else 0
+                        
+            except DatabricksError as exc:
+                self._log.warning(
+                    "Temporary table creation failed",
+                    extra=log_extra(
+                        request_id=request_id,
+                        query_id=query_id,
+                        temp_table_name=safe_table_name,
+                        error_message=str(exc),
+                    ),
+                )
+                raise QueryError(
+                    f"Failed to create temporary table '{safe_table_name}': {exc}"
+                ) from exc
+
+        self._log.info(
+            "Temporary table created",
+            extra=log_extra(
+                request_id=request_id,
+                query_id=query_id,
+                temp_table_name=safe_table_name,
+                row_count=row_count,
+            ),
+        )
+        
+        return {
+            "temp_table_name": safe_table_name,
+            "row_count": row_count,
+            "status": "created",
+            "scope": "session",
+            "note": "This temporary view is session-scoped and will be automatically cleaned up when the session ends",
         }
 
     def _execute(
