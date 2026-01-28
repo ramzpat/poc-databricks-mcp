@@ -309,10 +309,21 @@ python -m databricks_mcp.server
   - `metric_type`: One of COUNT, SUM, AVG, MIN, MAX
   - `metric_column`: Column to aggregate on (use "*" for COUNT)
   - `predicate`: Optional WHERE clause to filter rows before aggregation
+- **`create_temp_view(temp_table_name, source_tables, columns, join_conditions?, where_conditions?)`**: Create a temporary table from multiple views or data sources using structured parameters (no arbitrary SQL).
+  - `temp_table_name`: Name for the temporary table (alphanumeric and underscores only)
+  - `source_tables`: List of tables to combine, each with `catalog`, `schema`, `table`, and `alias`
+  - `columns`: List of columns to include, each with `table_alias`, `column`, and optional `alias` for renaming
+  - `join_conditions` (optional): List of JOIN specifications with `type` (INNER/LEFT/RIGHT/FULL), `left_table`, `left_column`, `right_table`, `right_column`
+  - `where_conditions` (optional): WHERE clause conditions (without the WHERE keyword)
+  - Returns metadata including the table name and row count
+  - **IMPORTANT**: Temporary table is session-scoped and will be automatically deleted when the Databricks session ends. It cannot be accessed from other AI agent sessions.
+  - All referenced tables must be within allowlisted catalogs/schemas
+  - Example use case: Combine customer purchase data with engagement metrics to identify high-value leads
 
 ## Guardrails
 - Allowlist enforcement for catalogs and schemas on every tool; anything else is rejected.
 - SELECT-only statements (enforced for aggregation queries).
+- Structured parameters prevent arbitrary SQL injection in `create_temp_view`.
 - Server-side row caps and timeouts always applied.
 - No raw data retrieval; all results are aggregated metrics only.
 
@@ -320,8 +331,75 @@ python -m databricks_mcp.server
 
 1. **Explore**: Use metadata tools to understand table structure and available columns.
 2. **Define Conditions**: Work with the MCP server to build WHERE clause predicates based on business logic.
-3. **Size Audience**: Use `approx_count` and `aggregate_metric` to estimate audience size with various conditions.
-4. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
+3. **Combine Data Sources**: Use `create_temp_view` to join multiple tables/views with structured parameters (e.g., combine purchase history with engagement metrics).
+4. **Size Audience**: Use `approx_count` and `aggregate_metric` on the temporary table or individual sources to estimate audience size with various conditions.
+5. **Export & Analyze**: Export conditions to generate a Jupyter notebook for internal DS team to run on Databricks platform for detailed analysis.
+
+### Example: Multi-Source Lead Generation
+
+```python
+# Step 1: Create a temporary table combining multiple data sources
+result = create_temp_view(
+    temp_table_name="qualified_leads",
+    source_tables=[
+        {"catalog": "main", "schema": "sales", "table": "customers", "alias": "c"},
+        {"catalog": "main", "schema": "sales", "table": "purchases_summary", "alias": "p"},
+        {"catalog": "main", "schema": "analytics", "table": "engagement_metrics", "alias": "e"}
+    ],
+    columns=[
+        {"table_alias": "c", "column": "customer_id"},
+        {"table_alias": "c", "column": "company_name"},
+        {"table_alias": "c", "column": "industry"},
+        {"table_alias": "p", "column": "total_purchases"},
+        {"table_alias": "p", "column": "avg_order_value", "alias": "avg_value"},
+        {"table_alias": "e", "column": "engagement_score"},
+        {"table_alias": "e", "column": "last_active_date"}
+    ],
+    join_conditions=[
+        {
+            "type": "INNER",
+            "left_table": "c",
+            "left_column": "customer_id",
+            "right_table": "p",
+            "right_column": "customer_id"
+        },
+        {
+            "type": "INNER",
+            "left_table": "c",
+            "left_column": "customer_id",
+            "right_table": "e",
+            "right_column": "customer_id"
+        }
+    ],
+    where_conditions="p.total_purchases > 10000 AND e.engagement_score > 0.75"
+)
+# Returns: {
+#   "temp_table_name": "qualified_leads", 
+#   "row_count": 1523, 
+#   "status": "created",
+#   "note": "This temporary table is session-scoped and will be automatically deleted when the Databricks session ends..."
+# }
+
+# Step 2: Query the temporary table directly by name in subsequent queries
+# Note: Temporary tables can be queried directly without catalog/schema prefixes
+count_result = approx_count(
+    catalog="main",
+    schema="default",
+    table="qualified_leads",
+    predicate="industry = 'Technology'"
+)
+
+# Step 3: Get aggregated metrics from the temporary table
+avg_purchase = aggregate_metric(
+    catalog="main",
+    schema="default",
+    table="qualified_leads",
+    metric_type="AVG",
+    metric_column="total_purchases"
+)
+```
+
+**Note**: Temporary tables are session-scoped and will be **automatically deleted** when the Databricks session terminates. They **cannot** be accessed from other AI agent sessions or persist beyond the current session.
 
 ## Observability
 - Structured logs include request IDs/query IDs; configure log level via `observability.log_level`.
