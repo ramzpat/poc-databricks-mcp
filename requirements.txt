@@ -1,0 +1,7 @@
+# Databricks MCP Server Dependencies
+# This file is used by Databricks Apps for dependency installation
+
+fastmcp>=0.4.0
+databricks-sql-connector>=3.0.0
+PyYAML>=6.0
+requests>=2.31.0

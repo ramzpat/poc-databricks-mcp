@@ -17,6 +17,94 @@ post_date: 2026-01-23
 
 ## POC - Databricks MCP
 
+## Deploying as a Databricks App
+
+This project includes configuration to deploy as a Databricks App, allowing you to run the MCP server within your Databricks workspace.
+
+### Prerequisites
+1. A Databricks workspace (AWS, Azure, or GCP)
+2. A Databricks SQL Warehouse (Serverless recommended)
+3. OAuth service principal with appropriate permissions
+4. Access to Databricks Apps feature
+
+### Deployment Steps
+
+1. **Prepare Configuration**
+   
+   Create a `config.yml` file in the root directory based on `config.example.yml`:
+   ```yaml
+   warehouse:
+     host: ${DATABRICKS_HOST}
+     http_path: ${DATABRICKS_HTTP_PATH}
+     warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
+   auth:
+     oauth:
+       client_id: ${DATABRICKS_CLIENT_ID}
+       client_secret: ${DATABRICKS_CLIENT_SECRET}
+       token_url: ${DATABRICKS_TOKEN_URL}
+   scopes:
+     catalogs:
+       main:
+         schemas:
+           - default
+   limits:
+     max_rows: 10000
+     sample_max_rows: 1000
+     query_timeout_seconds: 60
+     max_concurrent_queries: 5
+     allow_statement_types:
+       - SELECT
+   observability:
+     log_level: info
+     propagate_request_ids: true
+   ```
+
+2. **Configure Secrets in Databricks**
+   
+   Set up the required secrets in your Databricks workspace:
+   - `DATABRICKS_HOST` - Your workspace URL (e.g., `https://your-workspace.cloud.databricks.com`)
+   - `DATABRICKS_HTTP_PATH` - SQL Warehouse HTTP path (e.g., `/sql/1.0/warehouses/your-warehouse-id`)
+   - `DATABRICKS_WAREHOUSE_ID` - Your SQL Warehouse ID
+   - `DATABRICKS_CLIENT_ID` - OAuth client ID
+   - `DATABRICKS_CLIENT_SECRET` - OAuth client secret
+   - `DATABRICKS_TOKEN_URL` - OAuth token endpoint (e.g., `https://your-workspace.cloud.databricks.com/oidc/v1/token`)
+
+3. **Deploy the App**
+   
+   Using Databricks CLI:
+   ```bash
+   databricks apps deploy <app-name> --source-code-path .
+   ```
+   
+   Or through the Databricks UI:
+   - Navigate to Apps in your Databricks workspace
+   - Click "Create App"
+   - Upload or link to this repository
+   - The `app.yml` file will be automatically detected
+   - Configure environment variables/secrets
+   - Deploy
+
+4. **Verify Deployment**
+   
+   Once deployed, the app will:
+   - Install dependencies from `requirements.txt`
+   - Use the command specified in `app.yml` to start the server
+   - Load configuration from `config.yml` with environment variable substitution
+   - Expose MCP tools for data exploration and querying
+
+### Configuration Files
+
+- **app.yml**: Defines how Databricks runs the app (command, environment variables)
+- **requirements.txt**: Python dependencies for installation
+- **config.yml**: Application configuration (created from config.example.yml)
+
+### Notes
+
+- The `app.yml` uses `valueFrom` to reference Databricks secrets - ensure these are configured before deployment
+- All secrets should be managed through Databricks secrets, not hardcoded in files
+- The app runs the MCP server which communicates via stdin/stdout
+- Logs are available in the Databricks Apps console
+
 ## Quick start
 - Install: `pip install -e .`
 - Copy `config.example.yml` to `config.yml` and fill in warehouse + allowlists; inject secrets via env (no secrets in files).
