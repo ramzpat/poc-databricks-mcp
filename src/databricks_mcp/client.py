@@ -492,8 +492,11 @@ class DatabricksSQLClient:
         select_clause = f"SELECT {', '.join(column_parts)}"
         source_query = f"{select_clause} {from_clause} {join_clause} {where_clause}".strip()
         
-        # Create temporary table using CREATE OR REPLACE TEMPORARY TABLE
-        create_sql = f"CREATE OR REPLACE TEMPORARY TABLE `{safe_temp_table}` AS {source_query}"
+        # Create temporary table using CREATE TEMPORARY TABLE
+        # Note: Databricks doesn't support CREATE OR REPLACE for temp tables
+        # So we drop first if exists, then create
+        drop_sql = f"DROP TEMPORARY TABLE IF EXISTS `{safe_temp_table}`"
+        create_sql = f"CREATE TEMPORARY TABLE `{safe_temp_table}` AS {source_query}"
         
         timeout_value = effective_timeout(None, self._config.limits)
         
@@ -512,6 +515,9 @@ class DatabricksSQLClient:
                     },
                 ) as connection:
                     with connection.cursor() as cursor:
+                        # Drop the temporary table if it exists
+                        cursor.execute(drop_sql, None)
+                        
                         # Create the temporary table
                         cursor.execute(create_sql, None)
                         
@@ -579,12 +585,13 @@ class DatabricksSQLClient:
         QueryError: If query execution fails
         """
         statement_type = detect_statement_type(sql)
-        # Allow CREATE TEMPORARY TABLE for temporary table creation even if not in allowlist
-        is_temp_table_create = (
-            statement_type == "CREATE" 
-            and sql.strip().upper().startswith("CREATE OR REPLACE TEMPORARY TABLE")
+        # Allow CREATE TEMPORARY TABLE and DROP TEMPORARY TABLE for temporary table management
+        sql_upper = sql.strip().upper()
+        is_temp_table_op = (
+            (statement_type == "CREATE" and sql_upper.startswith("CREATE TEMPORARY TABLE"))
+            or (statement_type == "DROP" and sql_upper.startswith("DROP TEMPORARY TABLE"))
         )
-        if not is_temp_table_create:
+        if not is_temp_table_op:
             ensure_statement_allowed(
                 statement_type, self._config.limits.allow_statement_types
             )

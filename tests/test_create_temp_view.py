@@ -81,10 +81,12 @@ def test_create_temp_table_success(mocker):
     assert result["status"] == "created"
     assert "session-scoped" in result["note"]
     
-    # Verify CREATE GLOBAL TEMPORARY VIEW was called
-    assert mock_cursor.execute.call_count == 2
-    create_call = mock_cursor.execute.call_args_list[0]
-    assert "CREATE OR REPLACE TEMPORARY TABLE" in create_call[0][0]
+    # Verify DROP and CREATE TEMPORARY TABLE were called
+    assert mock_cursor.execute.call_count == 3  # DROP, CREATE, COUNT
+    drop_call = mock_cursor.execute.call_args_list[0]
+    create_call = mock_cursor.execute.call_args_list[1]
+    assert "DROP TEMPORARY TABLE IF EXISTS" in drop_call[0][0]
+    assert "CREATE TEMPORARY TABLE" in create_call[0][0]
     assert "`qualified_leads`" in create_call[0][0]
 
 
