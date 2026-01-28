@@ -31,7 +31,7 @@ This project includes configuration to deploy as a Databricks App, allowing you 
 
 1. **Prepare Configuration**
    
-   Create a `config.yml` file in the root directory based on `config.example.yml`:
+   Before deployment, copy `config.example.yml` to `config.yml` in the root directory. This file will be included in the deployment package:
    ```yaml
    warehouse:
      host: ${DATABRICKS_HOST}
@@ -58,31 +58,65 @@ This project includes configuration to deploy as a Databricks App, allowing you 
      log_level: info
      propagate_request_ids: true
    ```
-
-2. **Configure Secrets in Databricks**
    
-   Set up the required secrets in your Databricks workspace:
-   - `DATABRICKS_HOST` - Your workspace URL (e.g., `https://your-workspace.cloud.databricks.com`)
-   - `DATABRICKS_HTTP_PATH` - SQL Warehouse HTTP path (e.g., `/sql/1.0/warehouses/your-warehouse-id`)
-   - `DATABRICKS_WAREHOUSE_ID` - Your SQL Warehouse ID
-   - `DATABRICKS_CLIENT_ID` - OAuth client ID
-   - `DATABRICKS_CLIENT_SECRET` - OAuth client secret
-   - `DATABRICKS_TOKEN_URL` - OAuth token endpoint (e.g., `https://your-workspace.cloud.databricks.com/oidc/v1/token`)
+   **Note**: The `config.yml` file uses environment variable substitution (e.g., `${DATABRICKS_HOST}`). The actual values will be injected at runtime from environment variables configured in step 2.
+
+2. **Configure Environment Variables in Databricks App**
+   
+   When deploying the app, configure these environment variables in the Databricks App settings. The `app.yml` file references these via `valueFrom`, which can be set directly in the app configuration:
+   
+   **Option A: Direct Environment Variables (for non-production)**
+   Set these directly in the Databricks App environment configuration:
+   - `DATABRICKS_HOST` = `https://your-workspace.cloud.databricks.com`
+   - `DATABRICKS_HTTP_PATH` = `/sql/1.0/warehouses/your-warehouse-id`
+   - `DATABRICKS_WAREHOUSE_ID` = `your-warehouse-id`
+   - `DATABRICKS_CLIENT_ID` = `your-oauth-client-id`
+   - `DATABRICKS_CLIENT_SECRET` = `your-oauth-client-secret`
+   - `DATABRICKS_TOKEN_URL` = `https://your-workspace.cloud.databricks.com/oidc/v1/token`
+   
+   **Option B: Databricks Secrets (for production, recommended)**
+   Store sensitive values in Databricks secrets and reference them in the app configuration:
+   
+   First, create a secret scope:
+   ```bash
+   databricks secrets create-scope databricks-mcp-secrets
+   ```
+   
+   Then, add each secret:
+   ```bash
+   databricks secrets put-secret databricks-mcp-secrets DATABRICKS_HOST --string-value "https://your-workspace.cloud.databricks.com"
+   databricks secrets put-secret databricks-mcp-secrets DATABRICKS_HTTP_PATH --string-value "/sql/1.0/warehouses/your-warehouse-id"
+   databricks secrets put-secret databricks-mcp-secrets DATABRICKS_WAREHOUSE_ID --string-value "your-warehouse-id"
+   databricks secrets put-secret databricks-mcp-secrets DATABRICKS_CLIENT_ID --string-value "your-oauth-client-id"
+   databricks secrets put-secret databricks-mcp-secrets DATABRICKS_CLIENT_SECRET --string-value "your-oauth-client-secret"
+   databricks secrets put-secret databricks-mcp-secrets DATABRICKS_TOKEN_URL --string-value "https://your-workspace.cloud.databricks.com/oidc/v1/token"
+   ```
+   
+   You can also create secrets via the Databricks UI: Navigate to Settings → Secrets → Create Scope/Secret
 
 3. **Deploy the App**
    
+   Ensure `config.yml` exists in your project root (copy from `config.example.yml` if needed), then deploy:
+   
    Using Databricks CLI:
    ```bash
+   # Create config.yml from example if not already done
+   cp config.example.yml config.yml
+   
+   # Deploy the app (config.yml will be included in the deployment)
    databricks apps deploy <app-name> --source-code-path .
    ```
    
    Or through the Databricks UI:
+   - Create `config.yml` from `config.example.yml` in your local repository
    - Navigate to Apps in your Databricks workspace
    - Click "Create App"
-   - Upload or link to this repository
+   - Upload or link to this repository (including config.yml)
    - The `app.yml` file will be automatically detected
-   - Configure environment variables/secrets
+   - Configure environment variables as described in step 2
    - Deploy
+   
+   **Important**: The `config.yml` file must be present in the deployment package. It's listed in `.gitignore` for local development (to prevent committing secrets), but you should include it when deploying. The file itself doesn't contain secrets - it uses `${VAR_NAME}` placeholders that are substituted with environment variables at runtime.
 
 4. **Verify Deployment**
    
