@@ -1,0 +1,32 @@
+# Databricks App configuration
+# This file configures how the Databricks MCP server runs as a Databricks App
+
+command:
+  - python
+  - -m
+  - databricks_mcp.server
+
+env:
+  # Configuration file path (required)
+  # This directly sets the environment variable to the config file location
+  - name: DATABRICKS_MCP_CONFIG
+    value: config.yml
+  
+  # Databricks warehouse connection (required)
+  # These use 'valueFrom' to reference environment variables that should be set
+  # in the Databricks App configuration (either as direct env vars or from secrets)
+  - name: DATABRICKS_HOST
+    valueFrom: DATABRICKS_HOST
+  - name: DATABRICKS_HTTP_PATH
+    valueFrom: DATABRICKS_HTTP_PATH
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: DATABRICKS_WAREHOUSE_ID
+  
+  # OAuth authentication (required)
+  # These should reference secure values from Databricks secrets in production
+  - name: DATABRICKS_CLIENT_ID
+    valueFrom: DATABRICKS_CLIENT_ID
+  - name: DATABRICKS_CLIENT_SECRET
+    valueFrom: DATABRICKS_CLIENT_SECRET
+  - name: DATABRICKS_TOKEN_URL
+    valueFrom: DATABRICKS_TOKEN_URL
