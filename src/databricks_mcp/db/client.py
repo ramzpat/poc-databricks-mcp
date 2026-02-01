@@ -10,7 +10,7 @@ from databricks.sql.exc import Error as DatabricksError
 
 from ..auth import OAuthTokenProvider
 from ..config import AppConfig
-from ..errors import GuardrailError, QueryError
+from ..errors import QueryError
 from ..guardrails import (
     clamp_limit,
     detect_statement_type,

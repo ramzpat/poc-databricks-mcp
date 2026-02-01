@@ -6,14 +6,13 @@ This module sets up the core application and registers all MCP tools.
 import argparse
 import os
 from pathlib import Path
-from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 
 from .auth import OAuthTokenProvider
-from .config import AppConfig, load_config
+from .config import load_config
 from .db import DatabricksSQLClient
 from .logging_utils import configure_logging
 from .tools import register_data_tools, register_user_tools
