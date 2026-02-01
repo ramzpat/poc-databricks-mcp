@@ -1,10 +1,11 @@
 # Databricks App configuration
 # This file configures how the Databricks MCP server runs as a Databricks App
 
-command:
-  - python
-  - -m
-  - databricks_mcp.server
+command: [
+  'uv',
+  'run',
+  'custom-server'
+]
 
 env:
   # Configuration file path (required)

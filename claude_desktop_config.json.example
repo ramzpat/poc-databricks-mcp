@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "databricks-mcp": {
+      "url": "https://poc-databricks-mcp-123360762620797.gcp.databricksapps.com/mcp"
+    }
+  }
+}

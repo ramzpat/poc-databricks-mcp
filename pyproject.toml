@@ -9,7 +9,12 @@ description = "Databricks MCP server POC"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastmcp>=0.4.0",
+    "fastapi>=0.115.12",
+    "mcp[cli]>=1.14.0",
+    "uvicorn>=0.34.2",
+    "databricks-sdk>=0.60.0",
+    "pydantic>=2",
+    "fastmcp>=2.12.5",
     "databricks-sql-connector>=3.0.0",
     "PyYAML>=6.0",
     "requests>=2.31.0",
@@ -21,8 +26,16 @@ test = [
     "pytest-mock>=3.12",
 ]
 
+dev = [
+    "ruff>=0.8.0",
+    "databricks-sdk",
+    "databricks-mcp",
+    "pytest",
+    "requests"
+]
+
 [project.scripts]
-databricks-mcp = "databricks_mcp.server:main"
+custom-server = "databricks_mcp.server.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -17,6 +17,25 @@ post_date: 2026-01-23
 
 ## POC - Databricks MCP
 
+A production-ready Databricks MCP server built with FastMCP and FastAPI, following the official [mcp-server-hello-world template](https://github.com/databricks/app-templates/tree/main/mcp-server-hello-world).
+
+### Quick Start
+
+```bash
+# Install dependencies
+uv sync
+
+# Run locally
+uv run custom-server
+
+# Deploy to Databricks
+databricks apps deploy
+```
+
+📖 **For detailed documentation, see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)**
+
+---
+
 ## Deploying as a Databricks App
 
 This project includes configuration to deploy as a Databricks App, allowing you to run the MCP server within your Databricks workspace.
