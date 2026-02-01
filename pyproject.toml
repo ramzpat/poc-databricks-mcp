@@ -35,7 +35,7 @@ dev = [
 ]
 
 [project.scripts]
-custom-server = "databricks_mcp.server.main:main"
+custom-server = "databricks_mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

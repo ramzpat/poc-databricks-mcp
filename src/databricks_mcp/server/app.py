@@ -1,31 +1,21 @@
 """FastAPI application configuration for the Databricks MCP server.
 
-This module sets up the core application by:
-1. Creating and configuring the FastMCP server instance
-2. Loading and registering all MCP tools
-3. Setting up CORS middleware for cross-origin requests
-4. Combining MCP routes with standard FastAPI routes
-5. Optionally serving static files for a web frontend
-
-The MCP (Model Context Protocol) server provides tools that can be called by
-AI assistants and other clients. FastMCP makes it easy to expose these tools
-over HTTP using the MCP protocol standard.
+This module sets up the core application and registers all MCP tools.
 """
 
+import asyncio
 import os
+import uuid
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI
 from fastmcp import FastMCP
 
 from ..auth import OAuthTokenProvider
 from ..client import DatabricksSQLClient
 from ..config import AppConfig, load_config
-from ..jobs import DatabricksJobsClient
 from ..logging_utils import configure_logging
-from .tools import load_tools
-from .utils import header_store
 
 
 def _config_path() -> Path:
@@ -34,14 +24,87 @@ def _config_path() -> Path:
     return Path(path)
 
 
-def create_app(config_path: Path | None = None) -> tuple[FastAPI, DatabricksSQLClient, DatabricksJobsClient]:
+def _request_id(value: str | None = None) -> str:
+    """Generate a unique request ID for tracing."""
+    return value or str(uuid.uuid4())
+
+
+def _register_tools(mcp_server: FastMCP, sql_client: DatabricksSQLClient) -> None:
+    """Register all MCP tools with the server.
+
+    Args:
+        mcp_server: The FastMCP server instance
+        sql_client: DatabricksSQLClient for database operations
+    """
+
+    @mcp_server.tool()
+    async def list_catalogs(request_id: str | None = None) -> list[str]:
+        """List all available catalogs in the Databricks workspace."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(sql_client.list_catalogs, rid)
+
+    @mcp_server.tool()
+    async def list_schemas(catalog: str, request_id: str | None = None) -> list[str]:
+        """List all schemas within a specified catalog."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(sql_client.list_schemas, catalog, rid)
+
+    @mcp_server.tool()
+    async def list_tables(
+        catalog: str, schema: str, request_id: str | None = None
+    ) -> dict[str, Any]:
+        """List all tables within a specified catalog and schema."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(sql_client.list_tables, catalog, schema, rid)
+
+    @mcp_server.tool()
+    async def table_metadata(
+        catalog: str,
+        schema: str,
+        table: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get detailed metadata about a table or view including columns and primary keys."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(
+            sql_client.table_metadata, catalog, schema, table, rid
+        )
+
+    @mcp_server.tool()
+    async def preview_query(
+        sql: str,
+        limit: int | None = None,
+        timeout_seconds: int | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Preview query results with a limited number of rows before full execution."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(
+            sql_client.preview_query, sql, limit, timeout_seconds, rid
+        )
+
+    @mcp_server.tool()
+    async def run_query(
+        sql: str,
+        limit: int | None = None,
+        timeout_seconds: int | None = None,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Execute a SQL query and return results with configurable row limit and timeout."""
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(
+            sql_client.run_query, sql, limit, timeout_seconds, rid
+        )
+
+
+def create_app(config_path: Path | None = None) -> tuple[FastAPI, DatabricksSQLClient]:
     """Create and configure the FastMCP server application.
 
     Args:
         config_path: Optional path to config file. If None, uses default from environment.
 
     Returns:
-        tuple: (combined_app, sql_client, jobs_client)
+        tuple: (combined_app, sql_client)
     """
     if config_path is None:
         config_path = _config_path()
@@ -51,18 +114,12 @@ def create_app(config_path: Path | None = None) -> tuple[FastAPI, DatabricksSQLC
 
     token_provider = OAuthTokenProvider(config.oauth)
     sql_client = DatabricksSQLClient(config, token_provider)
-    jobs_client = DatabricksJobsClient(config, token_provider)
 
-    # Create FastMCP server instance
     mcp_server = FastMCP(name="databricks-mcp")
+    _register_tools(mcp_server, sql_client)
 
-    # Load and register all tools with the MCP server
-    load_tools(mcp_server, sql_client, jobs_client)
-
-    # Convert the MCP server to a streamable HTTP application
     mcp_app = mcp_server.http_app()
 
-    # Create a separate FastAPI instance for additional API endpoints
     app = FastAPI(
         title="Databricks MCP Server",
         description="Databricks MCP Server for the Databricks Apps",
@@ -71,15 +128,10 @@ def create_app(config_path: Path | None = None) -> tuple[FastAPI, DatabricksSQLC
     )
 
     @app.get("/", include_in_schema=False)
-    async def serve_index() -> dict:
-        """Serve the index page or health check."""
-        static_dir = Path(__file__).parent.parent.parent / "static"
-        if static_dir.exists() and (static_dir / "index.html").exists():
-            return FileResponse(static_dir / "index.html")
-        else:
-            return {"message": "Databricks MCP Server is running", "status": "healthy"}
+    async def health_check() -> dict:
+        """Health check endpoint."""
+        return {"message": "Databricks MCP Server is running", "status": "healthy"}
 
-    # Create the final application by combining MCP routes with custom API routes
     combined_app = FastAPI(
         title="Databricks MCP App",
         routes=[
@@ -89,15 +141,7 @@ def create_app(config_path: Path | None = None) -> tuple[FastAPI, DatabricksSQLC
         lifespan=mcp_app.lifespan,
     )
 
-    # Middleware to capture the user token from the request headers
-    @combined_app.middleware("http")
-    async def capture_headers(request: Request, call_next):
-        """Middleware to capture request headers for authentication."""
-        header_store.set(dict(request.headers))
-        return await call_next(request)
-
-    return combined_app, sql_client, jobs_client
+    return combined_app, sql_client
 
 
-# Create the app instance
-combined_app, _sql_client, _jobs_client = create_app()
+combined_app, _sql_client = create_app()
