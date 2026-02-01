@@ -5,8 +5,8 @@ from typing import Optional
 
 import requests
 
-from .config import OAuthConfig
-from .errors import AuthError
+from ..config import OAuthConfig
+from ..errors import AuthError
 
 
 class OAuthTokenProvider:

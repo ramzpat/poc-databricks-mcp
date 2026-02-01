@@ -8,10 +8,10 @@ from typing import Any, Iterable
 import databricks.sql
 from databricks.sql.exc import Error as DatabricksError
 
-from .auth import OAuthTokenProvider
-from .config import AppConfig
-from .errors import GuardrailError, QueryError
-from .guardrails import (
+from ..auth import OAuthTokenProvider
+from ..config import AppConfig
+from ..errors import GuardrailError, QueryError
+from ..guardrails import (
     clamp_limit,
     detect_statement_type,
     effective_timeout,
@@ -20,7 +20,7 @@ from .guardrails import (
     ensure_statement_allowed,
     sanitize_identifier,
 )
-from .logging_utils import log_extra
+from ..logging_utils import log_extra
 
 
 class DatabricksSQLClient:

@@ -1,6 +1,10 @@
 """Databricks MCP server package."""
 
 __all__ = [
-    "config",
     "server",
+    "config",
+    "auth",
+    "db",
+    "guardrails",
+    "tools",
 ]
