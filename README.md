@@ -158,6 +158,25 @@ This project includes configuration to deploy as a Databricks App, allowing you 
 - The app runs the MCP server which communicates via stdin/stdout
 - Logs are available in the Databricks Apps console
 
+## Terraform: App Secrets from .env
+
+Use Terraform to create a Databricks secret scope and load app secrets from
+the root `.env` file. The configuration lives in the `terraform/` directory.
+
+### Prerequisites
+1. A workspace-level PAT in `.env` as `DATABRICKS_TOKEN`
+2. A workspace host in `.env` as `DATABRICKS_HOST`
+3. App secret values in `.env` for the keys in `terraform/variables.tf`
+
+### Steps
+1. Update `.env` with the required values
+2. Run `terraform init` and `terraform apply` in `terraform/`
+3. Use the `secret_references` output to configure app env values
+
+### Notes
+- The Terraform module reads `.env` directly; keep it out of source control
+- The run fails if any required secret keys are missing
+
 ## Quick start
 - Install: `pip install -e .`
 - Copy `config.example.yml` to `config.yml` and fill in warehouse + allowlists; inject secrets via env (no secrets in files).
