@@ -38,16 +38,21 @@ server.py
 
 ### After Adaptation (Modular - Template Pattern)
 ```
-src/databricks_mcp/server/
-  ├── main.py        - Entry point with uvicorn + argparse
-  ├── app.py         - FastAPI/FastMCP combined application
-  ├── tools.py       - Tool definitions with load_tools()
-  ├── utils.py       - Databricks authentication helpers
-  └── __init__.py
+src/databricks_mcp/
+  ├── server.py      - Main entry point and FastAPI/FastMCP combined application
+  ├── auth/          - Authentication Logic
+  │   └── dependencies.py - OAuth token provider
+  ├── db/            - Database / SQL Client
+  │   ├── client.py  - SQL client
+  │   └── models.py  - Pydantic models (placeholder)
+  ├── guardrails/    - Safety & Validation
+  │   └── input_checks.py - Query validation, scope checks
+  └── tools/         - MCP Tool definitions
+      ├── data_tools.py - Data analysis tools
+      └── user_tools.py - User tools (placeholder)
 
 Dependencies:
-  ├── auth.py        - OAuth token provider
-  ├── client.py      - SQL client
+  ├── config.py      - Configuration management
   ├── config.py      - Configuration
   └── [other modules]
 ```
@@ -59,25 +64,29 @@ Dependencies:
 ```
 .
 ├── src/databricks_mcp/
-│   ├── server/                    # MCP server implementation (NEW)
-│   │   ├── main.py               # Entry point: uvicorn startup
-│   │   ├── app.py                # FastAPI + FastMCP setup
-│   │   ├── tools.py              # Tool definitions
-│   │   ├── utils.py              # Auth helpers
-│   │   └── __init__.py
-│   ├── server.py                 # Legacy wrapper (backward compat)
-│   ├── auth.py                   # OAuth provider
-│   ├── client.py                 # SQL client
-│   ├── config.py                 # Config management
-│   ├── errors.py                 # Custom exceptions
-│   ├── guardrails.py             # Query validation
-│   ├── jobs.py                   # Jobs client
-│   └── logging_utils.py          # Logging setup
-├── docs/                          # Documentation (NEW)
-│   └── DEVELOPER_GUIDE.md        # This file
-├── pyproject.toml                # Updated with new dependencies
-├── app.yaml                      # Databricks Apps config
-├── config.example.yml            # Configuration template
+│   ├── server.py                  # Main entry point and FastAPI/FastMCP setup
+│   ├── auth/                      # Authentication Logic
+│   │   ├── __init__.py
+│   │   └── dependencies.py        # OAuth provider
+│   ├── db/                        # Database / SQL Client
+│   │   ├── __init__.py
+│   │   ├── client.py              # SQL client
+│   │   └── models.py              # Pydantic models (placeholder)
+│   ├── guardrails/                # Safety & Validation
+│   │   ├── __init__.py
+│   │   └── input_checks.py        # Query validation
+│   ├── tools/                     # MCP Tool definitions
+│   │   ├── __init__.py
+│   │   ├── data_tools.py          # Data analysis tools
+│   │   └── user_tools.py          # User tools (placeholder)
+│   ├── config.py                  # Config management
+│   ├── errors.py                  # Custom exceptions
+│   └── logging_utils.py           # Logging setup
+├── docs/                          # Documentation
+│   └── DEVELOPER_GUIDE.md         # This file
+├── pyproject.toml                 # Project dependencies
+├── app.yaml                       # Databricks Apps config
+├── config.example.yml             # Configuration template
 ├── README.md                     # Main documentation
 └── requirements.txt              # Python dependencies
 ```
@@ -139,7 +148,7 @@ dependencies = [
 
 #### 2. **New Server Structure**
 
-**server/main.py** - Entry point with configurable port
+**server.py** - Main entry point with FastAPI/FastMCP combination
 ```python
 import argparse
 import uvicorn
@@ -150,16 +159,10 @@ def main() -> None:
     args = parser.parse_args()
     
     uvicorn.run(
-        "databricks_mcp.server.app:combined_app",
+        "databricks_mcp.server:combined_app",
         host="0.0.0.0",
         port=args.port,
     )
-```
-
-**server/app.py** - FastAPI + FastMCP combination
-```python
-from fastapi import FastAPI, Request
-from fastmcp import FastMCP
 
 def create_app(config_path: Path | None = None):
     # Load config and initialize clients
@@ -191,9 +194,9 @@ def create_app(config_path: Path | None = None):
 combined_app, _sql_client, _jobs_client = create_app()
 ```
 
-**server/tools.py** - Modular tool registration
+**tools/data_tools.py** - Tool registration for data analysis
 ```python
-def load_tools(mcp_server, sql_client, jobs_client):
+def register_data_tools(mcp_server, sql_client):
     @mcp_server.tool()
     async def list_catalogs(request_id: str | None = None) -> list[str]:
         """List all available catalogs in the Databricks workspace."""
@@ -202,19 +205,6 @@ def load_tools(mcp_server, sql_client, jobs_client):
     
     # ... more tools ...
 ```
-
-**server/utils.py** - Authentication helpers
-```python
-import contextvars
-from databricks.sdk import WorkspaceClient
-
-class HeaderStore:
-    """Thread-safe context manager for request headers."""
-    def set(self, headers: dict) -> None: ...
-    def get(self) -> dict: ...
-
-def get_workspace_client() -> WorkspaceClient:
-    """Service principal authenticated client."""
     return WorkspaceClient()
 
 def get_user_authenticated_workspace_client() -> WorkspaceClient:
@@ -222,19 +212,28 @@ def get_user_authenticated_workspace_client() -> WorkspaceClient:
     return WorkspaceClient()
 ```
 
-#### 3. **Backward Compatibility**
-The original `server.py` now imports from the new structure:
+#### 3. **Module Organization**
+The code is now organized into focused packages:
 ```python
-from .server.main import main
-__all__ = ["main"]
+# auth/ - Authentication logic
+from databricks_mcp.auth import OAuthTokenProvider
+
+# db/ - Database operations
+from databricks_mcp.db import DatabricksSQLClient
+
+# guardrails/ - Safety checks
+from databricks_mcp.guardrails import sanitize_identifier
+
+# tools/ - MCP tool registration
+from databricks_mcp.tools import register_data_tools
 ```
 
 ### Why This Pattern?
 
 | Feature | Before | After |
 |---------|--------|-------|
-| Modularity | Single file | Separated: main, app, tools, utils |
-| Adding tools | Modify server.py | Add to server/tools.py |
+| Modularity | Single file | Separated: server.py, auth/, db/, tools/ |
+| Adding tools | Modify server.py | Add to tools/data_tools.py |
 | Port config | Code change needed | CLI: `--port 8080` |
 | HTTP support | Basic MCP | Full FastAPI + streaming |
 | Middleware | Limited | Full FastAPI support |
@@ -248,7 +247,7 @@ __all__ = ["main"]
 
 ### Method 1: Simple Tool
 ```python
-# In server/tools.py, inside load_tools() function
+# In tools/data_tools.py, inside register_data_tools() function
 @mcp_server.tool()
 async def my_tool(param: str) -> dict:
     """
@@ -397,7 +396,7 @@ python scripts/dev/query_remote.py \
 ### Custom API Endpoint (Beyond MCP Tools)
 
 ```python
-# In server/app.py, add to the FastAPI app
+# In server.py, add to the FastAPI app
 @app.get("/health")
 async def health_check():
     """Custom health check endpoint."""
@@ -511,7 +510,7 @@ python -c "from databricks.sdk import WorkspaceClient; w = WorkspaceClient(); pr
 1. **Install dependencies**: `uv sync`
 2. **Configure**: Copy and edit `config.yml`
 3. **Run locally**: `uv run custom-server`
-4. **Add tools**: Extend `server/tools.py`
+4. **Add tools**: Extend `tools/data_tools.py`
 5. **Test**: Use provided scripts
 6. **Deploy**: `databricks apps deploy`
 
