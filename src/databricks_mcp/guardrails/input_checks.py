@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from .config import LimitsConfig, ScopeConfig
-from .errors import GuardrailError, ScopeError
+from ..config import LimitsConfig, ScopeConfig
+from ..errors import GuardrailError, ScopeError
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

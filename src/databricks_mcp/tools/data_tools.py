@@ -1,27 +1,16 @@
-"""FastAPI application configuration for the Databricks MCP server.
+"""Data analysis tools for MCP server.
 
-This module sets up the core application and registers all MCP tools.
+This module contains MCP tools for data operations like querying,
+listing catalogs, schemas, tables, and retrieving metadata.
 """
 
+from __future__ import annotations
+
 import asyncio
-import os
 import uuid
-from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
-from fastmcp import FastMCP
-
-from ..auth import OAuthTokenProvider
-from ..client import DatabricksSQLClient
-from ..config import AppConfig, load_config
-from ..logging_utils import configure_logging
-
-
-def _config_path() -> Path:
-    """Get the configuration file path from environment or default."""
-    path = os.environ.get("DATABRICKS_MCP_CONFIG", "config.example.yml")
-    return Path(path)
+from ..db import DatabricksSQLClient
 
 
 def _request_id(value: str | None = None) -> str:
@@ -29,8 +18,8 @@ def _request_id(value: str | None = None) -> str:
     return value or str(uuid.uuid4())
 
 
-def _register_tools(mcp_server: FastMCP, sql_client: DatabricksSQLClient) -> None:
-    """Register all MCP tools with the server.
+def register_data_tools(mcp_server: Any, sql_client: DatabricksSQLClient) -> None:
+    """Register all data analysis MCP tools with the server.
 
     Args:
         mcp_server: The FastMCP server instance
@@ -95,53 +84,3 @@ def _register_tools(mcp_server: FastMCP, sql_client: DatabricksSQLClient) -> Non
         return await asyncio.to_thread(
             sql_client.run_query, sql, limit, timeout_seconds, rid
         )
-
-
-def create_app(config_path: Path | None = None) -> tuple[FastAPI, DatabricksSQLClient]:
-    """Create and configure the FastMCP server application.
-
-    Args:
-        config_path: Optional path to config file. If None, uses default from environment.
-
-    Returns:
-        tuple: (combined_app, sql_client)
-    """
-    if config_path is None:
-        config_path = _config_path()
-
-    config = load_config(config_path)
-    configure_logging(config.observability.log_level)
-
-    token_provider = OAuthTokenProvider(config.oauth)
-    sql_client = DatabricksSQLClient(config, token_provider)
-
-    mcp_server = FastMCP(name="databricks-mcp")
-    _register_tools(mcp_server, sql_client)
-
-    mcp_app = mcp_server.http_app()
-
-    app = FastAPI(
-        title="Databricks MCP Server",
-        description="Databricks MCP Server for the Databricks Apps",
-        version="0.1.0",
-        lifespan=mcp_app.lifespan,
-    )
-
-    @app.get("/", include_in_schema=False)
-    async def health_check() -> dict:
-        """Health check endpoint."""
-        return {"message": "Databricks MCP Server is running", "status": "healthy"}
-
-    combined_app = FastAPI(
-        title="Databricks MCP App",
-        routes=[
-            *mcp_app.routes,
-            *app.routes,
-        ],
-        lifespan=mcp_app.lifespan,
-    )
-
-    return combined_app, sql_client
-
-
-combined_app, _sql_client = create_app()
