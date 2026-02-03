@@ -447,12 +447,21 @@ python -m databricks_mcp.server
 ## Tools
 - `list_catalogs`, `list_schemas(catalog)`: return only allowlisted scopes.
 - `list_tables(catalog, schema)`: tables/views from information schema within allowed scopes.
-- `table_metadata(catalog, schema, table)`: columns, primary keys, partition columns, and row counts when available.
+- `table_metadata(catalog, schema, table)`: columns, primary keys, partition columns, and row counts when available. **Now includes static metadata from CSV files** when configured.
+- `get_static_metadata(catalog, schema, table)`: retrieve only static metadata from CSV files without querying Databricks. Useful for business context and documentation.
 - `partition_info(catalog, schema, table)`: partition columns plus lightweight stats (row count, size).
 - `sample_data(catalog, schema, table, limit?, predicate?)`: capped sample enforced server-side.
 - `preview_query(sql, limit?, timeout_seconds?)`: SELECT-only quick check with strict row/time cap.
 - `run_query(sql, limit?, timeout_seconds?)`: governed SELECT with row/time caps and optional unlimited rows when config explicitly uses `-1`.
 - `health_check()`: liveness without contacting Databricks.
+
+## Static Metadata
+- Enable in config.yml: `metadata.enabled: true` and `metadata.directory: ./metadata`
+- Create CSV files in `metadata/<catalog>/<schema>/<table>.csv` with column documentation
+- CSV columns: `column_name`, `description`, `business_definition`, `example_values`, `constraints`, `source_system`, `owner`, `tags`
+- The `table_metadata` tool automatically merges static metadata with live Databricks data
+- Use `get_static_metadata` tool to retrieve only static metadata without querying Databricks
+- See `metadata/README.md` for detailed format specification and examples
 
 ## Guardrails
 - Allowlist enforcement for catalogs and schemas on every tool; anything else is rejected.
