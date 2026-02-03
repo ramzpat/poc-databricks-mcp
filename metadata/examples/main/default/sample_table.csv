@@ -1,0 +1,8 @@
+column_name,data_type,description,business_definition,example_values,constraints,source_system,owner,tags
+user_id,BIGINT,Unique identifier for users,Primary key for user records in the system,"12345, 67890",NOT NULL PRIMARY KEY,CRM System,Data Engineering,pii,key
+username,STRING,User's login name,Unique username for authentication,"john_doe, jane_smith",NOT NULL UNIQUE,CRM System,Data Engineering,pii
+email,STRING,User's email address,Primary contact email for communications,"user@example.com",NOT NULL,CRM System,Data Engineering,pii,contact
+created_at,TIMESTAMP,Account creation timestamp,When the user account was first created,"2024-01-15 10:30:00",NOT NULL,CRM System,Data Engineering,audit
+is_active,BOOLEAN,Active status flag,Indicates if the user account is currently active,"true, false",NOT NULL DEFAULT true,CRM System,Data Engineering,status
+last_login,TIMESTAMP,Last login timestamp,Timestamp of the user's most recent login,"2024-02-01 14:22:33",,CRM System,Data Engineering,audit
+department,STRING,User's department,Department or business unit the user belongs to,"Engineering, Sales, Marketing",,HR System,People Analytics,organizational

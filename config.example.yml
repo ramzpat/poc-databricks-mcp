@@ -24,3 +24,8 @@ limits:
 observability:
   log_level: info
   propagate_request_ids: true
+metadata:
+  # Enable static metadata loading from CSV files
+  enabled: false
+  # Directory containing metadata files (relative or absolute path)
+  directory: ./metadata
