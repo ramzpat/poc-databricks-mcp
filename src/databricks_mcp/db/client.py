@@ -21,6 +21,7 @@ from ..guardrails import (
     sanitize_identifier,
 )
 from ..logging_utils import log_extra
+from ..metadata_loader import MetadataLoader, merge_metadata
 
 
 class DatabricksSQLClient:
@@ -29,6 +30,10 @@ class DatabricksSQLClient:
         self._token_provider = token_provider
         self._log = logging.getLogger(__name__)
         self._semaphore = Semaphore(config.limits.max_concurrent_queries)
+        self._metadata_loader = MetadataLoader(
+            metadata_dir=config.metadata.directory,
+            enabled=config.metadata.enabled,
+        )
 
     def list_catalogs(self, request_id: str | None = None) -> list[str]:
         return list(self._config.scopes.catalogs)
@@ -135,25 +140,72 @@ class DatabricksSQLClient:
             )
             detail = details[0] if details else {}
 
+        # Transform columns to the expected format
+        formatted_columns = [
+            {
+                "name": col.get("column_name"),
+                "data_type": col.get("data_type"),
+                "nullable": col.get("is_nullable"),
+                "comment": col.get("comment"),
+                "ordinal_position": col.get("ordinal_position"),
+            }
+            for col in columns
+        ]
+
+        # Load and merge static metadata
+        static_metadata = self._metadata_loader.get_table_metadata(catalog, schema, table)
+        merged_columns = merge_metadata(formatted_columns, static_metadata)
+
         return {
             "catalog": catalog,
             "schema": schema,
             "table": table,
             "table_type": table_type,
-            "columns": [
-                {
-                    "name": col.get("column_name"),
-                    "data_type": col.get("data_type"),
-                    "nullable": col.get("is_nullable"),
-                    "comment": col.get("comment"),
-                    "ordinal_position": col.get("ordinal_position"),
-                }
-                for col in columns
-            ],
+            "columns": merged_columns,
             "primary_keys": [pk.get("column_name") for pk in primary_keys],
             "partition_columns": detail.get("partitionColumns") or [],
             "row_count": detail.get("numRows"),
             "view_definition": view_definition,
+            "has_static_metadata": static_metadata is not None and len(static_metadata) > 0,
+        }
+
+    def get_static_metadata(
+        self, catalog: str, schema: str, table: str, request_id: str | None = None
+    ) -> dict[str, Any]:
+        """Get only static metadata for a table without querying Databricks.
+
+        Args:
+            catalog: Catalog name
+            schema: Schema name  
+            table: Table name
+            request_id: Request tracking ID
+
+        Returns:
+            Dictionary with static metadata information
+        """
+        ensure_catalog_allowed(catalog, self._config.scopes)
+        ensure_schema_allowed(catalog, schema, self._config.scopes)
+
+        if not self._metadata_loader.is_enabled():
+            return {
+                "enabled": False,
+                "metadata": None,
+                "message": "Static metadata is not enabled in configuration",
+            }
+
+        static_metadata = self._metadata_loader.get_table_metadata(catalog, schema, table)
+        
+        if not static_metadata:
+            return {
+                "enabled": True,
+                "metadata": None,
+                "message": f"No static metadata found for {catalog}.{schema}.{table}",
+            }
+
+        return {
+            "enabled": True,
+            "metadata": static_metadata,
+            "message": f"Found {len(static_metadata)} column metadata entries",
         }
 
     def preview_query(

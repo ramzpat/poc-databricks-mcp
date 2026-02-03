@@ -53,10 +53,39 @@ def register_data_tools(mcp_server: Any, sql_client: DatabricksSQLClient) -> Non
         table: str,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        """Get detailed metadata about a table or view including columns and primary keys."""
+        """Get detailed metadata about a table or view including columns and primary keys.
+        
+        This tool merges live Databricks metadata with static metadata from CSV files
+        (if configured). Static metadata provides additional business context like
+        descriptions, example values, constraints, and ownership information.
+        """
         rid = _request_id(request_id)
         return await asyncio.to_thread(
             sql_client.table_metadata, catalog, schema, table, rid
+        )
+
+    @mcp_server.tool()
+    async def get_static_metadata(
+        catalog: str,
+        schema: str,
+        table: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Get static metadata for a table from CSV files.
+        
+        Returns only the static metadata without querying Databricks.
+        Useful for getting business context, column descriptions, and documentation
+        without network calls to Databricks.
+        
+        Returns:
+            Dictionary with:
+            - enabled: Whether static metadata is configured
+            - metadata: List of column metadata (if available)
+            - message: Status message
+        """
+        rid = _request_id(request_id)
+        return await asyncio.to_thread(
+            sql_client.get_static_metadata, catalog, schema, table, rid
         )
 
     @mcp_server.tool()

@@ -46,12 +46,19 @@ class ObservabilityConfig:
 
 
 @dataclass
+class MetadataConfig:
+    enabled: bool = False
+    directory: str | None = None
+
+
+@dataclass
 class AppConfig:
     warehouse: WarehouseConfig
     oauth: OAuthConfig
     scopes: ScopeConfig
     limits: LimitsConfig
     observability: ObservabilityConfig
+    metadata: MetadataConfig
 
 
 _ALLOWED_STATEMENTS = {
@@ -111,6 +118,7 @@ def load_config(path: str | Path, env: Mapping[str, str] | None = None) -> AppCo
         scopes_raw = resolved["scopes"]
         limits_raw = resolved.get("limits", {})
         observability_raw = resolved.get("observability", {})
+        metadata_raw = resolved.get("metadata", {})
     except KeyError as exc:
         raise ConfigError(f"Missing config section: {exc.args[0]}") from exc
 
@@ -120,10 +128,14 @@ def load_config(path: str | Path, env: Mapping[str, str] | None = None) -> AppCo
         warehouse_id=warehouse_raw["warehouse_id"],
     )
 
+    # OAuth is required
+    if not oauth_raw:
+        raise ConfigError("Missing auth.oauth configuration section")
+    
     oauth = OAuthConfig(
-        client_id=oauth_raw["client_id"],
-        client_secret=oauth_raw["client_secret"],
-        token_url=oauth_raw["token_url"],
+        client_id=oauth_raw.get("client_id", ""),
+        client_secret=oauth_raw.get("client_secret", ""),
+        token_url=oauth_raw.get("token_url", ""),
         scope=oauth_raw.get("scope"),
     )
 
@@ -167,6 +179,11 @@ def load_config(path: str | Path, env: Mapping[str, str] | None = None) -> AppCo
         ),
     )
 
+    metadata = MetadataConfig(
+        enabled=bool(metadata_raw.get("enabled", False)),
+        directory=str(metadata_raw["directory"]) if metadata_raw.get("directory") else None,
+    )
+
     if not warehouse.host or not warehouse.http_path or not warehouse.warehouse_id:
         raise ConfigError("Warehouse host, http_path, and warehouse_id are required")
     if not oauth.client_id or not oauth.client_secret or not oauth.token_url:
@@ -181,4 +198,5 @@ def load_config(path: str | Path, env: Mapping[str, str] | None = None) -> AppCo
         scopes=scopes,
         limits=limits,
         observability=observability,
+        metadata=metadata,
     )

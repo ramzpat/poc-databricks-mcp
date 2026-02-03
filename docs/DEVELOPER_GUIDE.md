@@ -7,7 +7,8 @@
 4. [Quick Start](#quick-start)
 5. [Template Adaptation](#template-adaptation)
 6. [Adding New Tools](#adding-new-tools)
-7. [Code Examples](#code-examples)
+7. [Static Metadata Feature](#static-metadata-feature)
+8. [Code Examples](#code-examples)
 
 ---
 
@@ -24,6 +25,7 @@ This project implements a Databricks MCP (Model Context Protocol) server using t
 - ✓ OAuth token provider for workspace auth
 - ✓ Configuration management via YAML
 - ✓ Databricks Apps deployment ready
+- ✓ Static metadata ingestion from CSV files
 
 ---
 
@@ -341,6 +343,170 @@ async def safe_query(sql: str, limit: int = 100) -> dict:
    except Exception as e:
        return {"success": False, "error": str(e)}
    ```
+
+---
+
+## Static Metadata Feature
+
+The server supports static metadata ingestion from CSV files, allowing you to enrich table metadata with business context, column descriptions, and documentation without querying Databricks.
+
+### Configuration
+
+Add to your `config.yml`:
+
+```yaml
+metadata:
+  enabled: true
+  directory: ./metadata
+```
+
+### Directory Structure
+
+Create metadata files following this structure:
+
+```
+metadata/
+├── <catalog>/
+│   └── <schema>/
+│       └── <table>.csv
+```
+
+### CSV Format
+
+Each CSV file should have these columns:
+
+| Column              | Required | Description                          |
+|---------------------|----------|--------------------------------------|
+| column_name         | Yes      | Column name (matches Databricks)     |
+| data_type           | No       | Data type                            |
+| description         | No       | Column description                   |
+| business_definition | No       | Business context                     |
+| example_values      | No       | Example values                       |
+| constraints         | No       | Constraints (NOT NULL, etc.)         |
+| source_system       | No       | Source system                        |
+| owner               | No       | Data owner                           |
+| tags                | No       | Comma-separated tags                 |
+
+### Example
+
+`metadata/main/default/users.csv`:
+
+```csv
+column_name,description,business_definition,owner,tags
+user_id,Unique user identifier,Primary key for user records,Data Engineering,pii,key
+username,Login username,Unique username for authentication,Data Engineering,pii
+email,User email address,Primary contact email,Marketing,pii,contact
+```
+
+### Integration
+
+#### MetadataLoader Class
+
+The `MetadataLoader` class in `src/databricks_mcp/metadata_loader.py` handles:
+- Loading CSV files
+- Caching metadata
+- Merging with Databricks metadata
+
+```python
+from databricks_mcp.metadata_loader import MetadataLoader, merge_metadata
+
+# Initialize
+loader = MetadataLoader(
+    metadata_dir="./metadata",
+    enabled=True
+)
+
+# Load metadata
+metadata = loader.get_table_metadata("catalog", "schema", "table")
+
+# Merge with Databricks columns
+merged = merge_metadata(databricks_columns, metadata)
+```
+
+#### DatabricksSQLClient Integration
+
+The client automatically merges static metadata:
+
+```python
+# In db/client.py
+def table_metadata(self, catalog, schema, table, request_id=None):
+    # ... fetch from Databricks ...
+    
+    # Load static metadata
+    static_metadata = self._metadata_loader.get_table_metadata(
+        catalog, schema, table
+    )
+    
+    # Merge
+    merged_columns = merge_metadata(databricks_columns, static_metadata)
+    
+    return {
+        "columns": merged_columns,
+        "has_static_metadata": static_metadata is not None
+    }
+```
+
+### MCP Tools
+
+#### table_metadata
+
+Enhanced to include static metadata:
+
+```python
+@mcp_server.tool()
+async def table_metadata(catalog: str, schema: str, table: str):
+    """Get table metadata with static metadata merged in."""
+    return await sql_client.table_metadata(catalog, schema, table)
+```
+
+#### get_static_metadata
+
+New tool to get only static metadata:
+
+```python
+@mcp_server.tool()
+async def get_static_metadata(catalog: str, schema: str, table: str):
+    """Get static metadata without querying Databricks."""
+    return await sql_client.get_static_metadata(catalog, schema, table)
+```
+
+### Testing
+
+Tests are in `tests/test_metadata_loader.py`:
+
+```python
+def test_metadata_loader_load_existing(metadata_dir):
+    loader = MetadataLoader(metadata_dir=metadata_dir, enabled=True)
+    metadata = loader.get_table_metadata("catalog", "schema", "table")
+    assert metadata is not None
+    assert len(metadata) > 0
+
+def test_merge_metadata_with_static():
+    databricks_columns = [{"name": "col1", "data_type": "STRING"}]
+    static_metadata = [{"column_name": "col1", "description": "Test"}]
+    merged = merge_metadata(databricks_columns, static_metadata)
+    assert merged[0]["description"] == "Test"
+```
+
+Run tests:
+
+```bash
+pytest tests/test_metadata_loader.py -v
+```
+
+### Best Practices
+
+1. **Keep metadata files in version control**
+2. **Use consistent naming** matching Databricks exactly
+3. **Focus on business context** not available in Databricks
+4. **Update when schemas change**
+5. **Use tags for categorization** (pii, key, audit, etc.)
+
+### See Also
+
+- `metadata/README.md` - Detailed format specification
+- `docs/STATIC_METADATA_GUIDE.md` - Complete usage guide
+- `metadata/examples/` - Example CSV files
 
 ---
 
